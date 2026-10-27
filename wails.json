@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "mdbmc",
+  "outputfilename": "mdbmc",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./frontend/src",
+  "info": {
+    "companyName": "MDBMC",
+    "productName": "MDBMC 服务器带外管理",
+    "productVersion": "0.1.0",
+    "copyright": "MDBMC",
+    "comments": "多品牌服务器 IPMI / Redfish 统一管理"
+  }
+}
