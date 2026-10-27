@@ -1,0 +1,137 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --border: #e6e8ec;
+  --text-1: #14171c;
+  --text-2: #4b5563;
+  --text-3: #8a93a0;
+  --accent: #2a78d6;
+  --accent-soft: #e8f1fc;
+  --track: #eef0f3;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --status-unknown: #a3a9b2;
+  --power-on: #2a78d6;
+  --power-off: #8a93a0;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --radius: 10px;
+  --sider-bg: #0f1b2d;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #111215;
+  --surface: #1a1b1f;
+  --surface-2: #202227;
+  --border: #2c2f36;
+  --text-1: #eef0f3;
+  --text-2: #b6bcc6;
+  --text-3: #7c8491;
+  --accent: #3987e5;
+  --accent-soft: #1d2a3b;
+  --track: #2a2d33;
+  --status-unknown: #5f6670;
+  --power-on: #3987e5;
+  --power-off: #6b7280;
+  --shadow: none;
+  --sider-bg: #0c0d10;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: 'Cascadia Mono', Consolas, 'SFMono-Regular', Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+.secondary {
+  color: var(--text-2);
+}
+
+.page {
+  padding: 20px 24px 32px;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.page-head h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  line-height: 28px;
+}
+
+.page-head p {
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 35%, transparent);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -314,21 +314,21 @@ type AddDiscoveredResult struct {
 
 // Overview feeds the dashboard.
 type Overview struct {
-	Total       int            `json:"total"`
-	Reachable   int            `json:"reachable"`
-	Unreachable int            `json:"unreachable"`
-	PoweredOn   int            `json:"poweredOn"`
-	PoweredOff  int            `json:"poweredOff"`
-	HealthOK    int            `json:"healthOk"`
-	Warning     int            `json:"warning"`
-	Critical    int            `json:"critical"`
-	Unknown     int            `json:"unknown"`
-	ByVendor    []CountItem    `json:"byVendor"`
-	ByGroup     []CountItem    `json:"byGroup"`
-	Problems    []DeviceDTO    `json:"problems"`
-	Recent      []AuditEntry   `json:"recent"`
-	LastPoll    int64          `json:"lastPoll"`
-	Polling     bool           `json:"polling"`
+	Total       int          `json:"total"`
+	Reachable   int          `json:"reachable"`
+	Unreachable int          `json:"unreachable"`
+	PoweredOn   int          `json:"poweredOn"`
+	PoweredOff  int          `json:"poweredOff"`
+	HealthOK    int          `json:"healthOk"`
+	Warning     int          `json:"warning"`
+	Critical    int          `json:"critical"`
+	Unknown     int          `json:"unknown"`
+	ByVendor    []CountItem  `json:"byVendor"`
+	ByGroup     []CountItem  `json:"byGroup"`
+	Problems    []DeviceDTO  `json:"problems"`
+	Recent      []AuditEntry `json:"recent"`
+	LastPoll    int64        `json:"lastPoll"`
+	Polling     bool         `json:"polling"`
 }
 
 // CountItem is a labelled count.

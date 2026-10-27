@@ -1,0 +1,261 @@
+<script setup lang="ts">
+import { computed, h, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
+import {
+  NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NDropdown, NButton, NTooltip, NTag, NAvatar,
+  type MenuOption,
+} from 'naive-ui'
+import {
+  SpeedometerOutline, ServerOutline, ScanOutline, KeyOutline, PeopleOutline, DocumentTextOutline, SettingsOutline,
+  MoonOutline, SunnyOutline, ContrastOutline, LogOutOutline, LockClosedOutline, ChevronDown, RefreshOutline,
+} from '@vicons/ionicons5'
+import AppLogo from '@/components/AppLogo.vue'
+import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import { api, type Permission } from '@/api'
+import { useSession } from '@/stores/session'
+import { useTheme } from '@/stores/theme'
+import { useDevices } from '@/stores/devices'
+import { relativeTime } from '@/utils/format'
+
+const session = useSession()
+const theme = useTheme()
+const devices = useDevices()
+const route = useRoute()
+const router = useRouter()
+
+const collapsed = ref(false)
+const showPassword = ref(false)
+
+const icon = (c: Component) => () => h(NIcon, null, { default: () => h(c) })
+const item = (key: string, label: string, ic: Component, perm?: Permission): MenuOption | null =>
+  perm && !session.can(perm) ? null : { key, icon: icon(ic), label: () => h(RouterLink, { to: `/${key}` }, { default: () => label }) }
+
+const menu = computed(() =>
+  [
+    item('dashboard', '总览', SpeedometerOutline),
+    item('devices', '设备', ServerOutline),
+    item('discovery', '扫描发现', ScanOutline, 'device.manage'),
+    item('credentials', '凭据', KeyOutline),
+    { type: 'divider', key: 'd1' } as MenuOption,
+    item('users', '用户与角色', PeopleOutline, 'user.manage'),
+    item('audit', '审计日志', DocumentTextOutline, 'audit.view'),
+    item('settings', '系统设置', SettingsOutline),
+  ].filter(Boolean) as MenuOption[],
+)
+const activeKey = computed(() => String(route.path.split('/')[1] || 'dashboard'))
+
+const themeIcon = computed(() => (theme.mode === 'auto' ? ContrastOutline : theme.mode === 'dark' ? MoonOutline : SunnyOutline))
+const themeTip = computed(() => ({ auto: '主题：跟随系统', light: '主题：浅色', dark: '主题：深色' })[theme.mode])
+
+const userOptions = [
+  { label: '修改密码', key: 'password', icon: icon(LockClosedOutline) },
+  { type: 'divider', key: 'd' },
+  { label: '退出登录', key: 'logout', icon: icon(LogOutOutline) },
+]
+async function onUserSelect(key: string) {
+  if (key === 'password') showPassword.value = true
+  if (key === 'logout') await session.logout()
+}
+
+watch(() => session.loggedIn, (v) => {
+  if (!v) router.replace({ name: 'login' })
+})
+
+const forced = computed(() => !!session.user?.mustChangePassword)
+
+// Idle lock: logs out (wiping the vault key) after inactivity.
+let idleTimer: number | undefined
+let lastActivity = Date.now()
+function bump() {
+  lastActivity = Date.now()
+}
+const activityEvents = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart']
+onMounted(async () => {
+  activityEvents.forEach((e) => window.addEventListener(e, bump, { passive: true }))
+  idleTimer = window.setInterval(() => {
+    const mins = session.settings?.idleLockMinutes ?? 0
+    if (mins > 0 && Date.now() - lastActivity > mins * 60_000) {
+      void session.logout(`已因 ${mins} 分钟未操作自动锁定，请重新登录`)
+    }
+  }, 15_000)
+  devices.subscribe()
+  await devices.load()
+  try {
+    const ov = await api.bmc.overview()
+    devices.lastPoll = ov.lastPoll
+    devices.polling = ov.polling
+  } catch {
+    /* ignore */
+  }
+})
+onBeforeUnmount(() => {
+  activityEvents.forEach((e) => window.removeEventListener(e, bump))
+  window.clearInterval(idleTimer)
+})
+
+const tick = ref(0)
+const tickTimer = window.setInterval(() => tick.value++, 15_000)
+onBeforeUnmount(() => window.clearInterval(tickTimer))
+const pollText = computed(() => {
+  void tick.value
+  if (devices.polling) return '正在刷新状态…'
+  return devices.lastPoll ? `状态更新于 ${relativeTime(devices.lastPoll)}` : '尚未刷新状态'
+})
+
+async function refreshAll() {
+  await api.devices.refreshStatus([])
+}
+
+const initials = computed(() => (session.user?.displayName || session.user?.username || '?').slice(0, 1).toUpperCase())
+</script>
+
+<template>
+  <n-layout has-sider class="shell">
+    <n-layout-sider
+      :collapsed="collapsed"
+      collapse-mode="width"
+      :collapsed-width="64"
+      :width="216"
+      show-trigger="bar"
+      bordered
+      :native-scrollbar="false"
+      class="sider"
+      @collapse="collapsed = true"
+      @expand="collapsed = false"
+    >
+      <div class="brand">
+        <AppLogo :size="30" />
+        <div v-if="!collapsed" class="brand-text">
+          <div class="brand-name">MDBMC</div>
+          <div class="brand-sub">服务器带外管理</div>
+        </div>
+      </div>
+      <n-menu :value="activeKey" :options="menu" :collapsed="collapsed" :collapsed-width="64" :collapsed-icon-size="20" :indent="20" />
+      <div v-if="api.isMock && !collapsed" class="mock-flag">预览模式 · 模拟数据</div>
+    </n-layout-sider>
+    <n-layout>
+      <n-layout-header bordered class="header">
+        <div class="poll">
+          <span class="status-dot" :style="{ background: devices.polling ? 'var(--accent)' : 'var(--status-good)' }" />
+          <span class="muted">{{ pollText }}</span>
+          <n-tooltip>
+            <template #trigger>
+              <n-button quaternary circle size="small" :loading="devices.polling" @click="refreshAll">
+                <template #icon><n-icon :component="RefreshOutline" /></template>
+              </n-button>
+            </template>
+            立即刷新全部设备状态
+          </n-tooltip>
+        </div>
+        <div class="header-right">
+          <n-tooltip>
+            <template #trigger>
+              <n-button quaternary circle @click="theme.cycle()">
+                <template #icon><n-icon :component="themeIcon" /></template>
+              </n-button>
+            </template>
+            {{ themeTip }}
+          </n-tooltip>
+          <n-dropdown :options="userOptions" trigger="click" @select="onUserSelect">
+            <div class="user">
+              <n-avatar round :size="28" class="avatar">{{ initials }}</n-avatar>
+              <div class="user-text">
+                <div class="user-name">{{ session.user?.displayName || session.user?.username }}</div>
+              </div>
+              <n-tag size="small" :bordered="false" :type="session.user?.role === 'admin' ? 'info' : 'default'">{{ session.user?.roleLabel }}</n-tag>
+              <n-icon :component="ChevronDown" class="muted" />
+            </div>
+          </n-dropdown>
+        </div>
+      </n-layout-header>
+      <n-layout-content class="content" :native-scrollbar="false">
+        <router-view v-slot="{ Component: View }">
+          <component :is="View" :key="route.path" />
+        </router-view>
+      </n-layout-content>
+    </n-layout>
+    <ChangePasswordModal :show="showPassword || forced" :forced="forced" @update:show="(v: boolean) => (showPassword = v)" />
+  </n-layout>
+</template>
+
+<style scoped>
+.shell {
+  height: 100vh;
+}
+.sider :deep(.n-layout-sider-scroll-container) {
+  display: flex;
+  flex-direction: column;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 17px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.brand-name {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  line-height: 18px;
+}
+.brand-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.mock-flag {
+  margin: auto 16px 16px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  text-align: center;
+}
+.header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 24px;
+  background: var(--surface);
+}
+.poll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+.user:hover {
+  background: var(--surface-2);
+}
+.avatar {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.user-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.content {
+  height: calc(100vh - 60px);
+  background: var(--bg);
+}
+</style>

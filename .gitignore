@@ -6,3 +6,4 @@ frontend/dist/*
 *.db-wal
 *.db-shm
 .DS_Store
+frontend/package.json.md5
