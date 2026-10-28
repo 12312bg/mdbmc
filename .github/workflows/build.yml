@@ -1,0 +1,109 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WAILS_VERSION: v2.16.0
+  NODE_VERSION: "22"
+
+jobs:
+  test:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend type check and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Go vet (Linux and Windows)
+        run: |
+          go vet ./...
+          GOOS=windows go vet ./...
+
+      - name: Go test
+        run: go test -race -count=1 ./...
+
+  windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF#refs/tags/v}"
+          else
+            v="0.1.1-${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # Opens real WebView2 windows: checks that the console window appears,
+      # accepts only the pinned certificate and fills in the login form.
+      - name: Console window smoke test
+        env:
+          MDBMC_UI_TEST: "1"
+        run: go test -count=1 -v -run TestConsoleWindowSmoke ./internal/console/
+
+      - name: Install Wails CLI and NSIS
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+          }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build application and installer
+        shell: bash
+        run: >
+          wails build -clean -trimpath -nsis
+          -ldflags "-X github.com/12312bg/mdbmc/internal/app.Version=${{ steps.version.outputs.version }}"
+
+      - name: Build BMC simulator
+        run: go build -trimpath -o build/bin/bmcsim.exe ./cmd/bmcsim
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mdbmc-windows-amd64-${{ steps.version.outputs.version }}
+          path: build/bin/*.exe
+          if-no-files-found: error

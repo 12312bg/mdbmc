@@ -169,6 +169,17 @@ go test ./...                       # 单元测试 + 基于模拟器的 IPMI / R
 cd frontend && npm run typecheck    # 前端类型检查
 ```
 
+### 持续集成（GitHub Actions）
+
+每次推送都会运行 `.github/workflows/build.yml`：
+
+- **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`。
+- **Windows**：
+  - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口，确认窗口可见、只接受固定的证书公钥、能自动填写并提交登录表单。
+  - 再编译 `mdbmc.exe`、NSIS 安装包和 `bmcsim.exe`。
+
+编译产物在 Actions 运行页面的 **Artifacts** 中下载。推送 `v*` 标签时，版本号取自标签。
+
 ## 数据存放位置
 
 - 数据库：`%APPDATA%\mdbmc\mdbmc.db`
