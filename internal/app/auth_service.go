@@ -132,13 +132,26 @@ func (s *AuthService) Login(username, password string) (*UserInfo, error) {
 	return s.startSession(ctx, u, dek)
 }
 
-// Logout ends the session and wipes the key from memory.
+// Logout ends the session, wipes the key from memory and closes the console
+// windows.
 func (s *AuthService) Logout() {
+	s.end("auth.logout")
+	s.a.closeConsoles()
+}
+
+// Lock ends the session after inactivity, like Logout, but leaves the
+// console windows open so that long KVM work (an OS install, say) is not
+// cut off by the idle lock.
+func (s *AuthService) Lock() {
+	s.end("auth.lock")
+}
+
+func (s *AuthService) end(action string) {
 	sess := s.a.auth.Current()
 	s.a.poller.stop()
 	s.a.scanner.cancel()
 	if sess != nil {
-		s.a.audit(sess, "auth.logout", sess.Username, nil, "")
+		s.a.audit(sess, action, sess.Username, nil, "")
 	}
 	s.a.auth.Clear()
 }

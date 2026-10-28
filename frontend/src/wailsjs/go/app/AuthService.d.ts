@@ -4,6 +4,8 @@ import {app} from '../models';
 
 export function ChangePassword(arg1:string,arg2:string):Promise<void>;
 
+export function Lock():Promise<void>;
+
 export function Login(arg1:string,arg2:string):Promise<app.UserInfo>;
 
 export function Logout():Promise<void>;

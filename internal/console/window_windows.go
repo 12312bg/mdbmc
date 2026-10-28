@@ -106,12 +106,18 @@ func watchParent() {
 	}
 	go func() {
 		_, _ = windows.WaitForSingleObject(parent, windows.INFINITE)
-		if h := closeHwnd.Load(); h != 0 {
-			_, _, _ = procPostMessage.Call(h, wmClose, 0, 0)
-			time.Sleep(3 * time.Second) // the window normally closes first
-		}
-		os.Exit(0)
+		closeAndExit()
 	}()
+}
+
+// closeAndExit closes the window and ends the process. It may be called
+// from any goroutine.
+func closeAndExit() {
+	if h := closeHwnd.Load(); h != 0 {
+		_, _, _ = procPostMessage.Call(h, wmClose, 0, 0)
+		time.Sleep(3 * time.Second) // the window normally closes first
+	}
+	os.Exit(0)
 }
 
 // post runs f from the message loop, outside the WebView2 event that is
@@ -209,6 +215,11 @@ func RunWindow() {
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&req); err != nil {
 		fail("控制台启动参数无效: %v", err)
 	}
+	// The main program closes stdin to close the window (on logout).
+	go func() {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		closeAndExit()
+	}()
 	// The browser talks to the BMC through a local proxy; the page script
 	// and the first navigation use the proxied addresses.
 	px, err := startProxy(req.Spec.URL, req.CertFingerprint, reportEvent)

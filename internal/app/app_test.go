@@ -293,3 +293,37 @@ func TestDeviceLifecycleAgainstSimulator(t *testing.T) {
 		t.Fatalf("overview = %+v", ov)
 	}
 }
+
+// Logging out closes the console windows; the idle lock leaves them open
+// so long KVM work is not interrupted.
+func TestLogoutClosesConsolesIdleLockDoesNot(t *testing.T) {
+	h := newHarness(t)
+	closed := 0
+	h.app.closeConsoles = func() { closed++ }
+	_, err := h.authS.Setup("admin", "管理员", "Admin@12345")
+	must(t, err)
+
+	h.authS.Lock()
+	if closed != 0 {
+		t.Fatal("the idle lock closed the console windows")
+	}
+	if _, err := h.devices.List(); !errors.Is(err, auth.ErrNotLoggedIn) {
+		t.Fatalf("locked session still usable: %v", err)
+	}
+	_, err = h.authS.Login("admin", "Admin@12345")
+	must(t, err)
+	h.authS.Logout()
+	if closed != 1 {
+		t.Fatalf("logout closed the console windows %d times, want 1", closed)
+	}
+
+	_, err = h.authS.Login("admin", "Admin@12345")
+	must(t, err)
+	for action, want := range map[string]int{"auth.lock": 1, "auth.logout": 1} {
+		page, err := h.admin.ListAudit(AuditQuery{Keyword: action})
+		must(t, err)
+		if page.Total != want {
+			t.Fatalf("%s audit rows = %d, want %d", action, page.Total, want)
+		}
+	}
+}

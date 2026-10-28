@@ -111,6 +111,16 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		}
 	})
 
+	t.Run("CloseAll closes the windows (logout)", func(t *testing.T) {
+		p, _ := open(t, pinned)
+		CloseAll()
+		select {
+		case <-p.done:
+		case <-time.After(15 * time.Second):
+			t.Fatal("the window is still open 15s after CloseAll")
+		}
+	})
+
 	t.Run("window closes when the main program exits", func(t *testing.T) {
 		// The helper plays the main program: it opens a window and exits.
 		exe, err := os.Executable()

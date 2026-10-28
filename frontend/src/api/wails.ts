@@ -20,6 +20,7 @@ export const wailsApi: Api = {
     setup: (u, d, p) => c(Auth.Setup(u, d, p)),
     login: (u, p) => c(Auth.Login(u, p)),
     logout: () => Auth.Logout(),
+    lock: () => Auth.Lock(),
     changePassword: (o, n) => Auth.ChangePassword(o, n),
   },
   admin: {

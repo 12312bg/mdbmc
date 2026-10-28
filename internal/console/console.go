@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -69,10 +70,28 @@ func ProcessLauncher(req Request) error {
 	return err
 }
 
-// windowProc is a running console window process.
+// windowProc is a running console window process. Its stdin stays open
+// while the window should; closing it (or the main program exiting) makes
+// the window close.
 type windowProc struct {
-	cmd  *exec.Cmd
-	done chan struct{}
+	cmd   *exec.Cmd
+	stdin io.Closer
+	done  chan struct{}
+}
+
+// The windows this process opened and that are still running.
+var (
+	openMu  sync.Mutex
+	openSet = map[*windowProc]bool{}
+)
+
+// CloseAll closes every console window this process opened.
+func CloseAll() {
+	openMu.Lock()
+	defer openMu.Unlock()
+	for p := range openSet {
+		_ = p.stdin.Close()
+	}
 }
 
 func (p *windowProc) kill() {
@@ -119,18 +138,24 @@ func startWindow(req Request, timeout time.Duration, onEvent func(string)) (*win
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动控制台窗口失败: %w", err)
 	}
-	err = json.NewEncoder(stdin).Encode(req)
-	stdin.Close()
-	if err != nil {
+	if err := json.NewEncoder(stdin).Encode(req); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return nil, fmt.Errorf("向控制台窗口传递参数失败: %w", err)
 	}
 
-	p := &windowProc{cmd: cmd, done: make(chan struct{})}
+	p := &windowProc{cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	openMu.Lock()
+	openSet[p] = true
+	openMu.Unlock()
 	ready := make(chan error, 1)
 	go func() {
 		defer close(p.done)
+		defer func() {
+			openMu.Lock()
+			delete(openSet, p)
+			openMu.Unlock()
+		}()
 		gotReady := false
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
