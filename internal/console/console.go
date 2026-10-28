@@ -2,7 +2,7 @@
 //
 // Each window runs in a child process (the same executable started with
 // the --console flag) so that it can use its own browser profile and accept
-// the BMC's self-signed certificate without affecting the main window. The
+// the BMC's pinned self-signed certificate without affecting the main window. The
 // launch request, including the BMC password for auto-login, is passed over
 // the child's stdin and never appears on the command line. The child reports
 // back on stdout once its window is on screen, and on stderr if it fails.
@@ -48,19 +48,10 @@ type Request struct {
 	// Profile is the WebView2 user data folder, one per device so cookies
 	// and BMC sessions stay separate.
 	Profile string `json:"profile"`
-	// SPKIHash is the public key of the pinned BMC certificate (see
-	// bmc.CertInfo). The window accepts this self-signed key and nothing else.
-	SPKIHash string `json:"spkiHash"`
-}
-
-// browserArgs returns the WebView2 switches that make the window trust the
-// pinned BMC key. Without a key hash it falls back to accepting any
-// certificate, relying on the probe made just before the launch.
-func browserArgs(spkiHash string) string {
-	if spkiHash == "" {
-		return "--ignore-certificate-errors"
-	}
-	return "--ignore-certificate-errors-spki-list=" + spkiHash
+	// CertFingerprint is the hex SHA-256 of the pinned BMC certificate. The
+	// window accepts this self-signed certificate and refuses every other
+	// certificate error.
+	CertFingerprint string `json:"certFingerprint"`
 }
 
 // Launcher opens a console window.

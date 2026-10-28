@@ -6,7 +6,7 @@
   var KEY = '__mdbmc_' + cfg.nonce;
   // Progress reports to the window process (logged, and used by tests).
   function report(name, detail) {
-    try { if (window.__mdbmcEvent) window.__mdbmcEvent(name, String(detail || '')); } catch (e) {}
+    try { window.chrome.webview.postMessage('mdbmc:' + name + '\t' + String(detail || '')); } catch (e) {}
   }
   function get() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
   function set(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }

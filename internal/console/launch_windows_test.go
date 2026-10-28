@@ -4,7 +4,7 @@ package console
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -40,16 +40,16 @@ func TestConsoleWindowSmoke(t *testing.T) {
 	})
 	srv := httptest.NewTLSServer(mux)
 	defer srv.Close()
-	sum := sha256.Sum256(srv.Certificate().RawSubjectPublicKeyInfo)
-	pinned := base64.StdEncoding.EncodeToString(sum[:])
+	sum := sha256.Sum256(srv.Certificate().Raw)
+	pinned := hex.EncodeToString(sum[:])
 
-	open := func(t *testing.T, spki string) *windowProc {
+	open := func(t *testing.T, fingerprint string) *windowProc {
 		t.Helper()
 		p, err := startWindow(Request{
-			Title:    "MDBMC smoke test",
-			Spec:     bmc.LaunchSpec{URL: srv.URL + "/", AutoLogin: true, Username: "ADMIN", Password: `p"w&1`},
-			Profile:  t.TempDir(),
-			SPKIHash: spki,
+			Title:           "MDBMC smoke test",
+			Spec:            bmc.LaunchSpec{URL: srv.URL + "/", AutoLogin: true, Username: "ADMIN", Password: `p"w&1`},
+			Profile:         t.TempDir(),
+			CertFingerprint: fingerprint,
 		}, 60*time.Second)
 		if err != nil {
 			t.Fatalf("window did not start: %v", err)
@@ -79,17 +79,17 @@ func TestConsoleWindowSmoke(t *testing.T) {
 	})
 
 	t.Run("other certificate is refused", func(t *testing.T) {
-		wrong := base64.StdEncoding.EncodeToString(make([]byte, 32))
+		wrong := strings.Repeat("00", 32)
 		p := open(t, wrong)
 		deadline := time.After(20 * time.Second)
 		for {
 			select {
 			case ev := <-p.events:
 				if strings.HasPrefix(ev, "loaded") {
-					t.Fatalf("page loaded although its key is not pinned: %s", ev)
+					t.Fatalf("page loaded although its certificate is not pinned: %s", ev)
 				}
 			case got := <-logins:
-				t.Fatalf("credentials sent to a server with an unpinned key: %q", got)
+				t.Fatalf("credentials sent to a server with an unpinned certificate: %q", got)
 			case <-deadline:
 				return
 			}

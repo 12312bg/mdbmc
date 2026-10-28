@@ -232,7 +232,7 @@ func TestScanFindsSimulator(t *testing.T) {
 func TestProbeCertificate(t *testing.T) {
 	sim := startSim(t, bmcsim.Options{})
 	cert, err := bmc.ProbeCertificate(ctx(t), "127.0.0.1", sim.HTTPSPort, "")
-	if err != nil || cert.Fingerprint != sim.Fingerprint || cert.SPKIHash == "" {
+	if err != nil || cert.Fingerprint != sim.Fingerprint {
 		t.Fatalf("probe = %+v, %v", cert, err)
 	}
 	if _, err := bmc.ProbeCertificate(ctx(t), "127.0.0.1", sim.HTTPSPort, strings.Repeat("00", 32)); err == nil {

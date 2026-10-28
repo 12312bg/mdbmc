@@ -256,8 +256,8 @@ func TestDeviceLifecycleAgainstSimulator(t *testing.T) {
 	n := len(h.launched)
 	last := h.launched[n-1]
 	h.mu.Unlock()
-	if last.SPKIHash == "" {
-		t.Fatal("console request must carry the pinned public key")
+	if last.CertFingerprint != dev.TLSFingerprint || last.CertFingerprint == "" {
+		t.Fatalf("console request must carry the pinned certificate, got %q", last.CertFingerprint)
 	}
 	if n != 2 || last.Spec.Password != "ADMIN" || !strings.HasSuffix(last.Profile, filepath.Join("console", strconv.FormatInt(dev.ID, 10))) {
 		t.Fatalf("launched = %+v", h.launched)

@@ -63,12 +63,3 @@ func TestInitScriptLowercasesHost(t *testing.T) {
 		t.Fatal("host should be lower-cased to match location.host")
 	}
 }
-
-func TestBrowserArgs(t *testing.T) {
-	if got := browserArgs("abc="); got != "--ignore-certificate-errors-spki-list=abc=" {
-		t.Fatalf("got %q", got)
-	}
-	if got := browserArgs(""); got != "--ignore-certificate-errors" {
-		t.Fatalf("got %q", got)
-	}
-}

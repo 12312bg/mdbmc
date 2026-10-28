@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -266,7 +265,7 @@ func (s *BMCService) OpenKVM(id int64) (*ConsoleResult, error) {
 }
 
 // openConsole verifies the BMC certificate against the pin, then starts a
-// console window whose browser accepts only that certificate's public key.
+// console window whose browser accepts only that certificate.
 func (a *App) openConsole(ctx context.Context, d *store.Device, spec *bmc.LaunchSpec, kind string) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -279,14 +278,11 @@ func (a *App) openConsole(ctx context.Context, d *store.Device, spec *bmc.Launch
 		return fmt.Errorf("无法连接 BMC Web 服务: %w", err)
 	}
 	a.pinIfFirst(d, cert.Fingerprint)
-	if cert.SPKIHash == "" {
-		log.Printf("console: cannot parse the certificate of %s; the window will accept any certificate", d.Host)
-	}
 	return a.launch(console.Request{
-		Title:    fmt.Sprintf("%s - %s", d.Name, kind),
-		Spec:     *spec,
-		Profile:  filepath.Join(a.dataDir, "console", strconv.FormatInt(d.ID, 10)),
-		SPKIHash: cert.SPKIHash,
+		Title:           fmt.Sprintf("%s - %s", d.Name, kind),
+		Spec:            *spec,
+		Profile:         filepath.Join(a.dataDir, "console", strconv.FormatInt(d.ID, 10)),
+		CertFingerprint: cert.Fingerprint,
 	})
 }
 

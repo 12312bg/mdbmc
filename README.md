@@ -48,7 +48,7 @@ MDBMC 是一款 Windows 桌面软件，用于在局域网内集中管理多个�
 - **BMC 证书指纹固定**
   - BMC 通常使用自签名证书，因此采用首次信任（TOFU）：第一次连接时记录 SHA-256 指纹，之后指纹变化即拒绝连接。
   - 需要在设备详情中手动“信任当前证书”才能恢复连接。
-  - 控制台窗口只接受已固定证书的公钥（通过 Chromium 的 `--ignore-certificate-errors-spki-list` 参数），其他证书一律拒绝。只有证书无法解析、拿不到公钥时，才退回为接受任意证书，此时依赖打开窗口前的指纹校验。
+  - 控制台窗口同样只接受已固定的证书：WebView2 报告证书错误时（`ServerCertificateErrorDetected` 事件），只有证书的 SHA-256 指纹与固定值一致才放行，其他证书一律拒绝。该事件需要较新的 WebView2 Runtime（ICoreWebView2_14，2022 年以后的版本），运行时过旧时窗口会提示更新。
 - **控制台窗口隔离**
   - Web/KVM 页面运行在独立的子进程中，每台设备使用独立的浏览器配置目录。
   - 自动登录用的密码通过子进程的标准输入传递，不会出现在命令行参数里。
@@ -74,7 +74,7 @@ Java 版 KVM（老旧机型）暂不支持。
   - [go-ipmi](https://github.com/bougou/go-ipmi)：IPMI 2.0
   - [gofish](https://github.com/stmcginnis/gofish)：Redfish
   - [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite)：纯 Go 实现，无需 CGO
-  - [go-webview2](https://github.com/jchv/go-webview2)：控制台子窗口
+  - [go-webview2](https://github.com/wailsapp/go-webview2)：控制台子窗口（自建 Win32 窗口 + WebView2）
 - **前端**：Vue 3、TypeScript、Vite、[Naive UI](https://www.naiveui.com)、Pinia、Vue Router；支持浅色、深色和跟随系统三种主题
 
 ## 项目结构
@@ -175,7 +175,7 @@ cd frontend && npm run typecheck    # 前端类型检查
 
 - **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`。
 - **Windows**：
-  - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口，确认窗口可见、只接受固定的证书公钥、能自动填写并提交登录表单。
+  - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口，确认窗口可见、只接受固定的证书、能自动填写并提交登录表单。
   - 再编译 `mdbmc.exe`、NSIS 安装包和 `bmcsim.exe`。
 
 编译产物在 Actions 运行页面的 **Artifacts** 中下载。推送 `v*` 标签时，版本号取自标签。
