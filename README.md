@@ -51,7 +51,7 @@
   - 控制台窗口同样只接受已固定的证书，见下方“控制台窗口如何连接 BMC”。
 - **控制台窗口如何连接 BMC（本地代理）**
   - 老款 BMC 固件常用 TLS 1.0/1.1、旧加密套件或格式不规范的证书，这些都会被 WebView2（Chromium 内核）直接拒绝，窗口打不开页面。
-  - 因此控制台窗口不直接连接 BMC：每个窗口进程在本机回环地址（随机的 `127.x.y.z`，端口尽量与 BMC 相同）上启动一个 HTTPS 代理，WebView2 只访问这个代理；代理再用与 IPMI/Redfish 相同的 Go TLS 客户端连接 BMC，并且**只接受已固定指纹的 BMC 证书**。
+  - 因此控制台窗口不直接连接 BMC：每个窗口进程在本机 `127.0.0.1` 的随机高位端口上启动一个 HTTPS 代理（不用 443 等常见端口，避免被安全软件的 HTTPS 检查拦截），WebView2 只访问这个代理；代理再用与 IPMI/Redfish 相同的 Go TLS 客户端连接 BMC，并且**只接受已固定指纹的 BMC 证书**。
   - 代理使用临时生成的自签名证书，窗口只信任这一张（WebView2 的 `ServerCertificateErrorDetected` 事件，需要 2022 年以后的 WebView2 Runtime，过旧时窗口会提示更新）；页面里直接链接到 BMC 原地址的，同样只放行固定的 BMC 证书。
   - 代理只接受带会话 Cookie 的请求，该 Cookie 只能通过窗口启动时的一次性地址获得，本机其他程序无法借用。
   - 代理会把 BMC 返回的跳转地址、Cookie 的 Domain 改写为代理地址，并把请求的 Host / Origin / Referer 还原为 BMC 地址；WebSocket（HTML5 KVM）同样经过代理。
@@ -205,8 +205,10 @@ cd frontend && npm run typecheck    # 前端类型检查
 
 - **Web 管理 / 远程控制台窗口打不开页面**：窗口内的提示页会说明原因（连接超时、BMC 拒绝连接、TLS 握手失败、证书与已信任的不一致等），展开“技术详情”可看到具体错误。
 - 每个控制台窗口的过程都会写入日志 `%APPDATA%\mdbmc\mdbmc.log`，以 `console window "<设备名> - Web 管理"` 开头，例如：
-  - `proxy https://127.x.y.z -> https://<BMC 地址>`：本地代理已启动；
+  - `proxy https://127.0.0.1:<端口> -> https://<BMC 地址>`：本地代理已启动；
+  - `certificate-allowed .../__mdbmc/start`：窗口已连上本地代理；
+  - `proxy-request GET / -> 200 (350 ms)`：代理向 BMC 请求页面的结果；
   - `loaded /`、`submitted /`：页面已加载、已自动提交登录表单；
-  - `proxy-error ...`：代理连接 BMC 失败的原因；
+  - `proxy-error ...`：代理连接 BMC 失败的原因；`proxy-log ...`：BMC 返回内容中途出错；`proxy-server ...`：窗口与本地代理之间的连接错误；
   - `navigation-failed ...`、`certificate-rejected ...`、`process-failed ...`：WebView2 层面的错误。
 - 反馈问题时请附上这些日志行（不含密码）。

@@ -15,7 +15,6 @@ import (
 	"io"
 	"log"
 	"math/big"
-	mrand "math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -39,9 +38,9 @@ import (
 // proxy forwards each request to the BMC through bmc.PinnedTransport, which
 // accepts nothing but the BMC's pinned certificate.
 //
-// The proxy listens on a random 127.x.y.z address, on the BMC's own port when
-// it is free, so pages that build URLs from location.hostname keep working.
-// Requests must carry a session cookie that only the window's start URL sets,
+// The proxy listens on 127.0.0.1 with a random high port: security software
+// tends to inspect or block TLS on well-known ports such as 443, even on
+// loopback. Requests must carry a session cookie that only the window's start URL sets,
 // so other local programs cannot use the proxy.
 type proxy struct {
 	target *url.URL // https://bmc[:port]
@@ -76,7 +75,7 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 	if fingerprint == "" {
 		return nil, errors.New("缺少 BMC 证书指纹")
 	}
-	ln, err := listenLoopback(portOf(u))
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("无法监听本地端口: %w", err)
 	}
@@ -103,7 +102,8 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 		Transport:      bmc.PinnedTransport(fingerprint),
 		ModifyResponse: p.modifyResponse,
 		ErrorHandler:   p.upstreamError,
-		ErrorLog:       log.New(io.Discard, "", 0),
+		// Upstream failures after the response started (body copy errors).
+		ErrorLog: log.New(reportWriter{p, "proxy-log"}, "", 0),
 	}
 	p.srv = &http.Server{
 		Handler:           p,
@@ -116,7 +116,8 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 			Certificates: []tls.Certificate{cert},
 			NextProtos:   []string{"http/1.1"},
 		},
-		ErrorLog: log.New(io.Discard, "", 0),
+		// Failures between the browser and the proxy, e.g. TLS handshakes.
+		ErrorLog: log.New(reportWriter{p, "proxy-server"}, "", 0),
 	}
 	go func() { _ = p.srv.ServeTLS(ln, "", "") }()
 	return p, nil
@@ -125,19 +126,6 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 func (p *proxy) Close() error { return p.srv.Close() }
 
 func (p *proxy) origin() string { return "https://" + p.host }
-
-// listenLoopback listens on a random 127.x.y.z address with the BMC's port,
-// falling back to 127.0.0.1 and a free port (port taken, or a system that
-// only routes 127.0.0.1).
-func listenLoopback(port int) (net.Listener, error) {
-	for range 3 {
-		ip := net.IPv4(127, byte(mrand.IntN(254)+1), byte(mrand.IntN(256)), byte(mrand.IntN(253)+2))
-		if ln, err := net.Listen("tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port))); err == nil {
-			return ln, nil
-		}
-	}
-	return net.Listen("tcp4", "127.0.0.1:0")
-}
 
 func selfSignedCert(ip net.IP) (tls.Certificate, string, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -246,7 +234,49 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if dest := r.Header.Get("Sec-Fetch-Dest"); dest == "document" || dest == "iframe" || dest == "frame" {
+		// Pages (not their resources) are logged to follow what the window does.
+		rec := &statusRecorder{ResponseWriter: w}
+		begin := time.Now()
+		p.rp.ServeHTTP(rec, r)
+		p.event("proxy-request", fmt.Sprintf("%s %s -> %d (%d ms)", r.Method, r.URL.Path, rec.status, time.Since(begin).Milliseconds()))
+		return
+	}
 	p.rp.ServeHTTP(w, r)
+}
+
+// statusRecorder remembers the status code of a response.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	if r.status == 0 {
+		r.status = code
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach Flush and Hijack.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// reportWriter turns log output into diagnostic events.
+type reportWriter struct {
+	p    *proxy
+	name string
+}
+
+func (w reportWriter) Write(b []byte) (int, error) {
+	w.p.reportOnce(w.name, strings.TrimSpace(string(b)))
+	return len(b), nil
 }
 
 func (p *proxy) start(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +370,12 @@ func (p *proxy) upstreamError(w http.ResponseWriter, r *http.Request, err error)
 	pg.Detail = fmt.Sprintf("%s %s\n%v", r.Method, r.URL.RequestURI(), err)
 	p.reportOnce("proxy-error", r.URL.Path+": "+err.Error())
 	writePage(w, http.StatusBadGateway, pg)
+}
+
+func (p *proxy) event(name, detail string) {
+	if p.report != nil {
+		p.report(name, detail)
+	}
 }
 
 // reportOnce passes a diagnostic on, but not the same one again within a few

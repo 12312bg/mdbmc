@@ -122,10 +122,10 @@ func get(t *testing.T, c *http.Client, u string, header ...string) (*http.Respon
 
 func TestProxyForwardsAndRewrites(t *testing.T) {
 	srv, fp := fakeBMC(t, nil)
-	p, _ := newTestProxy(t, srv.URL+"/", fp)
+	p, ev := newTestProxy(t, srv.URL+"/", fp)
 	c := browserFor(t, p)
 
-	if !strings.HasPrefix(p.host, "127.") {
+	if !strings.HasPrefix(p.host, "127.0.0.1:") {
 		t.Fatalf("proxy should listen on loopback, got %s", p.host)
 	}
 	res, body := get(t, c, p.startURL(srv.URL+"/"))
@@ -148,7 +148,10 @@ func TestProxyForwardsAndRewrites(t *testing.T) {
 		t.Fatalf("Set-Cookie not rewritten: %q", sc)
 	}
 
-	_, body = get(t, c, p.origin()+"/echo", "Origin", p.origin(), "Referer", p.origin()+"/main?x=1")
+	_, body = get(t, c, p.origin()+"/echo", "Origin", p.origin(), "Referer", p.origin()+"/main?x=1", "Sec-Fetch-Dest", "document")
+	if !strings.Contains(ev.String(), "proxy-request GET /echo -> 200") {
+		t.Fatalf("page request not reported:\n%s", ev)
+	}
 	bmcOrigin := "https://" + srv.Listener.Addr().String()
 	for _, want := range []string{
 		"host=" + srv.Listener.Addr().String() + "\n",
