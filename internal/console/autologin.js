@@ -2,7 +2,7 @@
 // BMC's own origin: it fills the login form once, then optionally opens the
 // page given as "after" (e.g. the KVM viewer) once the login went through.
 (function (cfg) {
-  if (window.top !== window || location.host !== cfg.host) return;
+  if (window.top !== window || location.host.toLowerCase() !== cfg.host) return;
   var KEY = '__mdbmc_' + cfg.nonce;
   function get() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
   function set(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }

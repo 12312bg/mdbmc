@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/12312bg/mdbmc/internal/bmc"
 	"github.com/12312bg/mdbmc/internal/store"
 )
+
+var scanIDRe = regexp.MustCompile(`^[A-Za-z0-9-]{4,40}$`)
 
 // DiscoveryService scans the network for BMCs and adds them.
 type DiscoveryService struct{ a *App }
@@ -56,7 +59,10 @@ func (d *DiscoveryService) StartScan(req ScanRequest) (*ScanStarted, error) {
 	sc := d.a.scanner
 	sc.cancel()
 	ctx, cancel := context.WithCancel(d.a.bg())
-	id := newID()
+	id := req.ScanID
+	if !scanIDRe.MatchString(id) {
+		id = newID()
+	}
 	sc.mu.Lock()
 	sc.id, sc.stopFn = id, cancel
 	sc.mu.Unlock()

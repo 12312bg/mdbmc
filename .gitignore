@@ -7,3 +7,6 @@ frontend/dist/*
 *.db-shm
 .DS_Store
 frontend/package.json.md5
+/devbridge
+/bmcsim
+*.exe

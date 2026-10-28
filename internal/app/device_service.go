@@ -285,12 +285,12 @@ func (s *DeviceService) TrustCertificate(id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fp, err := bmc.ProbeCertificate(ctx, d.Host, d.HTTPSPort, "")
+	cert, err := bmc.ProbeCertificate(ctx, d.Host, d.HTTPSPort, "")
 	if err == nil {
-		err = s.a.store.SetTLSFingerprint(ctx, id, fp)
+		err = s.a.store.SetTLSFingerprint(ctx, id, cert.Fingerprint)
 	}
-	s.a.audit(sess, "device.trust_cert", deviceLabel(d), err, "新指纹 "+fp)
-	return fp, err
+	s.a.audit(sess, "device.trust_cert", deviceLabel(d), err, "新指纹 "+cert.Fingerprint)
+	return cert.Fingerprint, err
 }
 
 // ListGroups returns all groups.
@@ -372,10 +372,8 @@ func (a *App) identify(sess *auth.Session, ids []int64) {
 
 // identifyOne refreshes a device's identity and status from its BMC.
 func (a *App) identifyOne(ctx context.Context, sess *auth.Session, id int64) error {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
 	var ident *bmc.Identity
-	d, err := a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	d, err := a.withClient(ctx, sess, id, 90*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		var err error
 		ident, err = c.Identify(ctx)
 		return err

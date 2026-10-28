@@ -406,7 +406,7 @@ export const mockApi: Api = {
     async startScan(req) {
       need('device.manage')
       const total = req.targets.includes('/') ? 254 : 20
-      const scanId = Math.random().toString(16).slice(2, 10)
+      const scanId = req.scanId
       let done = 0; let found = 0
       const timer = setInterval(() => {
         done = Math.min(total, done + 9)

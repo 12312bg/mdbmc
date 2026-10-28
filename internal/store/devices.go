@@ -229,6 +229,19 @@ func (s *Store) UpdateDeviceStatus(ctx context.Context, id int64, st Status) err
 	return err
 }
 
+// PinTLSFingerprint records fp only if the device has no pin yet and still
+// points at host:port, so a slow operation against an old endpoint cannot pin
+// that endpoint's certificate after the device was re-pointed.
+func (s *Store) PinTLSFingerprint(ctx context.Context, id int64, host string, port int, fp string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET tls_fingerprint = ?
+		WHERE id = ? AND tls_fingerprint = '' AND host = ? AND https_port = ?`, fp, id, host, port)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 // SetTLSFingerprint pins (or clears, with "") the BMC certificate fingerprint.
 func (s *Store) SetTLSFingerprint(ctx context.Context, id int64, fp string) error {
 	return s.execOne(ctx, "UPDATE devices SET tls_fingerprint = ? WHERE id = ?", fp, id)

@@ -120,6 +120,10 @@ func TestSetupLoginAndRoles(t *testing.T) {
 	if !me.MustChangePassword {
 		t.Fatal("new users must change their password")
 	}
+	if _, err := h.creds.List(); !errors.Is(err, auth.ErrMustChangePassword) {
+		t.Fatalf("initial password must be changed first, got %v", err)
+	}
+	must(t, h.authS.ChangePassword("Viewer@123", "Viewer@456"))
 	creds, err := h.creds.List()
 	must(t, err)
 	if _, err := h.creds.Reveal(creds[0].ID); !errors.Is(err, auth.ErrForbidden) {
@@ -131,12 +135,12 @@ func TestSetupLoginAndRoles(t *testing.T) {
 	if _, err := h.admin.ListUsers(); !errors.Is(err, auth.ErrForbidden) {
 		t.Fatalf("viewer listed users: %v", err)
 	}
-	must(t, h.authS.ChangePassword("Viewer@123", "Viewer@456"))
 	h.authS.Logout()
 
 	// The operator can reveal passwords, decrypted with its own wrapped key.
 	_, err = h.authS.Login("op", "Operator@1")
 	must(t, err)
+	must(t, h.authS.ChangePassword("Operator@1", "Operator@2"))
 	pw, err := h.creds.Reveal(creds[0].ID)
 	must(t, err)
 	if pw != "secret-pw" {
@@ -161,6 +165,7 @@ func TestSetupLoginAndRoles(t *testing.T) {
 	h.authS.Logout()
 	_, err = h.authS.Login("ro", "Reset@7890")
 	must(t, err)
+	must(t, h.authS.ChangePassword("Reset@7890", "Viewer@789"))
 	if _, err := h.creds.List(); err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +256,9 @@ func TestDeviceLifecycleAgainstSimulator(t *testing.T) {
 	n := len(h.launched)
 	last := h.launched[n-1]
 	h.mu.Unlock()
+	if last.SPKIHash == "" {
+		t.Fatal("console request must carry the pinned public key")
+	}
 	if n != 2 || last.Spec.Password != "ADMIN" || !strings.HasSuffix(last.Profile, filepath.Join("console", strconv.FormatInt(dev.ID, 10))) {
 		t.Fatalf("launched = %+v", h.launched)
 	}
@@ -266,6 +274,7 @@ func TestDeviceLifecycleAgainstSimulator(t *testing.T) {
 	h.authS.Logout()
 	_, err = h.authS.Login("ro", "Viewer@123")
 	must(t, err)
+	must(t, h.authS.ChangePassword("Viewer@123", "Viewer@456"))
 	h.app.poller.stop()
 	web, err = h.bmcS.OpenWeb(dev.ID)
 	must(t, err)

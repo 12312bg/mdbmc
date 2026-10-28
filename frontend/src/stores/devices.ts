@@ -15,6 +15,8 @@ export const useDevices = defineStore('devices', () => {
   let reloadTimer: number | undefined
 
   const byId = computed(() => new Map(items.value.map((d) => [d.id, d])))
+  const groupOptions = computed(() => [{ label: '未分组', value: 0 }, ...groups.value.map((g) => ({ label: g.name, value: g.id }))])
+  const credentialOptions = computed(() => credentials.value.map((c) => ({ label: `${c.name}（${c.username}）`, value: c.id })))
 
   async function load() {
     loading.value = true
@@ -58,5 +60,8 @@ export const useDevices = defineStore('devices', () => {
     })
   }
 
-  return { items, groups, credentials, vendors, loading, polling, lastPoll, byId, load, subscribe, scheduleReload }
+  return {
+    items, groups, credentials, vendors, loading, polling, lastPoll, byId, groupOptions, credentialOptions,
+    load, subscribe, scheduleReload,
+  }
 })

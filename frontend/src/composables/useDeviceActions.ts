@@ -22,6 +22,9 @@ export function useDeviceActions() {
         positiveButtonProps: meta.danger ? { type: 'error' } : undefined,
         onNegativeClick: () => resolve(false),
         onClose: () => resolve(false),
+        // ESC and mask clicks close the dialog without the callbacks above;
+        // resolving again after a button is a no-op.
+        onAfterLeave: () => resolve(false),
         onPositiveClick: async () => {
           try {
             const res = await api.bmc.power(ids, action)

@@ -35,10 +35,9 @@ func RunWindow() {
 		messageBox("MDBMC", err.Error())
 		os.Exit(2)
 	}
-	// BMC certificates are self-signed; the main process verified the pinned
-	// fingerprint just before starting this window. The flag only applies to
-	// this process's private browser profile.
-	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-certificate-errors")
+	// BMC certificates are self-signed. Chromium only honours the SPKI list
+	// together with a user data folder, which every console window has.
+	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", browserArgs(req.SPKIHash))
 	if req.Profile != "" {
 		_ = os.MkdirAll(req.Profile, 0o700)
 	}

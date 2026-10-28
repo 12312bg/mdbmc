@@ -231,9 +231,44 @@ func (c *Client) Power(ctx context.Context, a PowerAction) (Protocol, error) {
 	if !a.Valid() {
 		return "", fmt.Errorf("未知电源操作 %q", a)
 	}
-	return c.try(ctx, c.order(ProtocolIPMI, ProtocolRedfish),
-		func(ip *ipmiConn) error { return ip.power(ctx, a) },
-		func(rf *rfConn) error { return rf.power(a) })
+	var errs []error
+	for _, p := range c.order(ProtocolIPMI, ProtocolRedfish) {
+		var sent bool
+		var err error
+		switch p {
+		case ProtocolIPMI:
+			var ip *ipmiConn
+			if ip, err = c.ipmi(ctx); err == nil {
+				sent, err = true, ip.power(ctx, a)
+			}
+		case ProtocolRedfish:
+			var rf *rfConn
+			if rf, err = c.redfish(ctx); err == nil {
+				sent, err = true, rf.power(a)
+			}
+			if c.rf != nil {
+				c.ObservedFingerprint = c.rf.pin.Observed()
+			}
+		}
+		if err == nil {
+			return p, nil
+		}
+		var mm *FingerprintMismatchError
+		if errors.As(err, &mm) {
+			return p, err
+		}
+		errs = append(errs, friendly(p, err))
+		// A reset or power cycle whose reply was lost may already have
+		// happened; repeating it over the other protocol could hit the host
+		// twice. Only fall back when the command never reached the BMC.
+		if sent && !a.Idempotent() {
+			break
+		}
+	}
+	if len(errs) == 0 {
+		return "", ErrNotSupported
+	}
+	return "", joinErrors(errs)
 }
 
 // Identify LED: seconds 0 turns it off; force keeps it on indefinitely.

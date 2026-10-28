@@ -69,9 +69,11 @@ const groupCounts = computed(() => {
 
 // ----- selection -----
 const checked = ref<number[]>([])
-watch(() => store.items.map((d) => d.id).join(','), () => {
-  const ids = new Set(store.items.map((d) => d.id))
-  checked.value = checked.value.filter((id) => ids.has(id))
+// Keep the selection to rows the user can see, so a batch action never
+// touches devices hidden by a filter or removed meanwhile.
+watch(filtered, (rows) => {
+  const visible = new Set(rows.map((d) => d.id))
+  if (checked.value.some((id) => !visible.has(id))) checked.value = checked.value.filter((id) => visible.has(id))
 })
 const selectedDevices = computed(() => checked.value.map((id) => store.byId.get(id)).filter(Boolean) as Device[])
 
@@ -97,15 +99,18 @@ const groupModal = ref<{ show: boolean; id: number; name: string }>({ show: fals
 function openGroup(id = 0, name = '') {
   groupModal.value = { show: true, id, name }
 }
-async function saveGroup() {
+// Returns false to keep the dialog open when saving fails.
+async function saveGroup(): Promise<boolean> {
   const { id, name } = groupModal.value
   try {
     if (id) await api.devices.renameGroup(id, name)
     else await api.devices.createGroup(name)
     groupModal.value.show = false
     await store.load()
+    return true
   } catch (e) {
     message.error(errMsg(e))
+    return false
   }
 }
 function removeGroup(id: number, name: string) {
@@ -132,10 +137,7 @@ async function batchPower(action: PowerAction) {
   const ds = selectedDevices.value
   await actions.power(ds.map((d) => d.id), action, ds.map((d) => d.name))
 }
-const moveOptions = computed<DropdownOption[]>(() => [
-  { label: '未分组', key: 0 },
-  ...store.groups.map((g) => ({ label: g.name, key: g.id })),
-])
+const moveOptions = computed<DropdownOption[]>(() => store.groupOptions.map((o) => ({ label: o.label, key: o.value })))
 async function batchMove(groupId: number) {
   try {
     await api.devices.moveToGroup(checked.value, groupId)
@@ -145,7 +147,7 @@ async function batchMove(groupId: number) {
     message.error(errMsg(e))
   }
 }
-const credOptions = computed<DropdownOption[]>(() => store.credentials.map((c) => ({ label: `${c.name}（${c.username}）`, key: c.id })))
+const credOptions = computed<DropdownOption[]>(() => store.credentialOptions.map((o) => ({ label: o.label, key: o.value })))
 async function batchCred(credId: number) {
   try {
     await api.devices.setCredential(checked.value, credId)

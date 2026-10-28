@@ -62,7 +62,12 @@ func (s *AdminService) CreateUser(in UserInput) error {
 	if err := validatePassword(in.Password); err != nil {
 		return err
 	}
-	salt, wrapped, err := vault.Wrap(sess.DataKey(), in.Password, vault.DefaultKDF)
+	dek, err := sess.DataKey()
+	if err != nil {
+		return err
+	}
+	defer vault.Zero(dek)
+	salt, wrapped, err := vault.Wrap(dek, in.Password, vault.DefaultKDF)
 	if err != nil {
 		return err
 	}
@@ -140,7 +145,12 @@ func (s *AdminService) ResetPassword(id int64, newPassword string) error {
 	if u.ID == sess.UserID {
 		return errors.New("请在“修改密码”中修改自己的密码")
 	}
-	salt, wrapped, err := vault.Wrap(sess.DataKey(), newPassword, vault.DefaultKDF)
+	dek, err := sess.DataKey()
+	if err != nil {
+		return err
+	}
+	defer vault.Zero(dek)
+	salt, wrapped, err := vault.Wrap(dek, newPassword, vault.DefaultKDF)
 	if err != nil {
 		return err
 	}

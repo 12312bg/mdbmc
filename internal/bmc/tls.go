@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -47,6 +48,7 @@ type pinner struct {
 	expected string
 	mu       sync.Mutex
 	observed string
+	spki     string
 }
 
 func (p *pinner) Observed() string {
@@ -78,8 +80,13 @@ func (p *pinner) tlsConfig() *tls.Config {
 				return errors.New("BMC 未提供证书")
 			}
 			fp := Fingerprint(rawCerts[0])
+			spki := ""
+			if cert, err := x509.ParseCertificate(rawCerts[0]); err == nil {
+				sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+				spki = base64.StdEncoding.EncodeToString(sum[:])
+			}
 			p.mu.Lock()
-			p.observed = fp
+			p.observed, p.spki = fp, spki
 			p.mu.Unlock()
 			if p.expected != "" && !strings.EqualFold(fp, p.expected) {
 				return &FingerprintMismatchError{Expected: p.expected, Observed: fp}
@@ -120,21 +127,34 @@ func newHTTPClient(p *pinner, timeout time.Duration) *http.Client {
 	}
 }
 
-// ProbeCertificate connects to host:port and returns the certificate
-// fingerprint. With expected set, a different certificate is an error.
-func ProbeCertificate(ctx context.Context, host string, port int, expected string) (string, error) {
+// CertInfo identifies a BMC certificate.
+type CertInfo struct {
+	// Fingerprint is the hex SHA-256 of the whole certificate (the pin).
+	Fingerprint string
+	// SPKIHash is the base64 SHA-256 of the public key, the form Chromium's
+	// --ignore-certificate-errors-spki-list expects. Empty if the
+	// certificate could not be parsed.
+	SPKIHash string
+}
+
+// ProbeCertificate connects to host:port and returns the certificate it
+// presents. With expected set, a different certificate is an error.
+func ProbeCertificate(ctx context.Context, host string, port int, expected string) (CertInfo, error) {
 	p := &pinner{expected: expected}
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 6 * time.Second}, Config: p.tlsConfig()}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	p.mu.Lock()
+	info := CertInfo{Fingerprint: p.observed, SPKIHash: p.spki}
+	p.mu.Unlock()
 	if err != nil {
 		var mm *FingerprintMismatchError
 		if errors.As(err, &mm) {
-			return mm.Observed, mm
+			return info, mm
 		}
-		return p.Observed(), fmt.Errorf("无法建立 HTTPS 连接: %w", err)
+		return info, fmt.Errorf("无法建立 HTTPS 连接: %w", err)
 	}
 	conn.Close()
-	return p.Observed(), nil
+	return info, nil
 }
 
 func baseURL(host string, port int) string {

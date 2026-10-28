@@ -67,15 +67,21 @@ async function save() {
 
 // ----- reset password -----
 const reset = ref({ show: false, id: 0, name: '', password: '' })
-async function doReset() {
-  if (reset.value.password.length < 8) return message.warning('密码至少 8 位')
+// Returns false to keep the dialog open on invalid input or failure.
+async function doReset(): Promise<boolean> {
+  if (reset.value.password.length < 8) {
+    message.warning('密码至少 8 位')
+    return false
+  }
   try {
     await api.admin.resetPassword(reset.value.id, reset.value.password)
     message.success('密码已重置，用户下次登录需修改密码')
     reset.value.show = false
     await load()
+    return true
   } catch (e) {
     message.error(errMsg(e))
+    return false
   }
 }
 

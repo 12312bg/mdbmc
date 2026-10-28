@@ -143,13 +143,14 @@ func (p *poller) pollOne(ctx context.Context, sess *auth.Session, d *store.Devic
 	if err != nil {
 		return
 	}
-	set := p.a.Settings()
-	opCtx, cancel := context.WithTimeout(ctx, time.Duration(set.IPMITimeoutSec*3+set.RedfishTimeoutSec*2)*time.Second)
-	defer cancel()
-	release, err := p.a.acquire(opCtx, d.ID)
+	release, err := p.a.acquire(ctx, d.ID)
 	if err != nil {
 		return
 	}
+	// Start the clock only once it is this device's turn.
+	set := p.a.Settings()
+	opCtx, cancel := context.WithTimeout(ctx, time.Duration(set.IPMITimeoutSec*3+set.RedfishTimeoutSec*2)*time.Second)
+	defer cancel()
 	c := bmc.New(t)
 	res := c.Status(opCtx)
 	c.Close()

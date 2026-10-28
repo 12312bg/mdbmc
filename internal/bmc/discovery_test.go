@@ -15,6 +15,7 @@ func TestExpandTargets(t *testing.T) {
 		{"10.0.0.0/16", 0, false},
 		{"10.0.0.20-10", 0, false},
 		{"bmc01.lab, 10.0.0.1", 2, true},
+		{"bmc-rack1-01.example.com", 1, true},
 		{"", 0, false},
 	}
 	for _, c := range cases {
@@ -68,5 +69,22 @@ func TestDetectVendor(t *testing.T) {
 	}
 	if got := DetectVendor(10876, "", "AMI"); got != VendorSupermicro {
 		t.Errorf("IANA fallback = %s", got)
+	}
+}
+
+func TestDiscreteStatus(t *testing.T) {
+	cases := map[string]string{
+		"":                                     "ok",
+		"Presence detected":                    "ok",
+		"Predictive Failure":                   "warning",
+		"Redundancy Lost":                      "warning",
+		"Power Supply Failure detected":        "critical",
+		"Failure detected, Predictive Failure": "critical",
+		"Presence detected, Power Supply AC lost": "critical",
+	}
+	for in, want := range cases {
+		if got := discreteStatus(in); got != want {
+			t.Errorf("discreteStatus(%q) = %s, want %s", in, got, want)
+		}
 	}
 }

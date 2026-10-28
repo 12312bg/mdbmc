@@ -64,12 +64,9 @@ func ExpandTargets(spec string, max int) ([]string, error) {
 				}
 				a = a.Next()
 			}
-		case strings.Contains(f, "-"):
+		case isRange(f):
 			lo, hi, _ := strings.Cut(f, "-")
-			start, err := netip.ParseAddr(strings.TrimSpace(lo))
-			if err != nil || !start.Is4() {
-				return nil, fmt.Errorf("无效的地址范围 %q", f)
-			}
+			start, _ := netip.ParseAddr(strings.TrimSpace(lo))
 			hi = strings.TrimSpace(hi)
 			var end netip.Addr
 			if n, err := strconv.Atoi(hi); err == nil && n >= 0 && n <= 255 {
@@ -111,6 +108,17 @@ func ExpandTargets(spec string, max int) ([]string, error) {
 		return nil, errors.New("请输入要扫描的地址、网段或范围")
 	}
 	return out, nil
+}
+
+// isRange reports whether f looks like "a.b.c.d-x"; anything else with a
+// hyphen is a host name such as bmc-rack1-01.example.com.
+func isRange(f string) bool {
+	lo, _, ok := strings.Cut(f, "-")
+	if !ok {
+		return false
+	}
+	a, err := netip.ParseAddr(strings.TrimSpace(lo))
+	return err == nil && a.Is4()
 }
 
 // ScanResult describes a BMC found by discovery.

@@ -610,6 +610,7 @@ export namespace app {
 		}
 	}
 	export class ScanRequest {
+	    scanId: string;
 	    targets: string;
 	    ipmiPort: number;
 	    httpsPort: number;
@@ -620,6 +621,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scanId = source["scanId"];
 	        this.targets = source["targets"];
 	        this.ipmiPort = source["ipmiPort"];
 	        this.httpsPort = source["httpsPort"];

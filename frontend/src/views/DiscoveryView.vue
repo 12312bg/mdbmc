@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, ref } from 'vue'
+import { computed, h, onBeforeUnmount, ref, shallowRef, triggerRef } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton, NIcon, NInput, NInputNumber, NForm, NFormItem, NProgress, NDataTable, NTag, NModal, NSelect, NRadioGroup,
@@ -18,48 +18,50 @@ const targets = ref('')
 const ipmiPort = ref(623)
 const httpsPort = ref(443)
 const scanId = ref('')
+const starting = ref(false)
 const progress = ref<ScanProgress | null>(null)
-const results = ref<ScanFound[]>([])
+// Results arrive one event at a time; append without copying and sort
+// lazily for display.
+const found = shallowRef<ScanFound[]>([])
+const results = computed(() => [...found.value].sort((a, b) => a.host.localeCompare(b.host, undefined, { numeric: true })))
 const checked = ref<string[]>([])
-const running = computed(() => !!progress.value && !progress.value.finished)
+const running = computed(() => starting.value || (!!progress.value && !progress.value.finished))
 
-// Events can arrive before StartScan returns the scan id (a small range
-// finishes almost instantly), so events for unknown scans are buffered.
-const early = new Map<string, { found: ScanFound[]; progress?: ScanProgress }>()
-function buffer(id: string) {
-  if (!early.has(id)) early.set(id, { found: [] })
-  return early.get(id)!
-}
-function addFound(f: ScanFound) {
-  results.value = [...results.value, f].sort((a, b) => a.host.localeCompare(b.host, undefined, { numeric: true }))
-  if (!f.managedId) checked.value = [...checked.value, f.host]
-}
 const offFound = api.on('scan:found', (f) => {
-  if (f.scanId === scanId.value) addFound(f)
-  else buffer(f.scanId).found.push(f)
+  if (f.scanId !== scanId.value) return
+  found.value.push(f)
+  triggerRef(found)
+  if (!f.managedId) checked.value.push(f.host)
 })
 const offProgress = api.on('scan:progress', (p) => {
   if (p.scanId === scanId.value) progress.value = p
-  else buffer(p.scanId).progress = p
 })
 onBeforeUnmount(() => {
   offFound()
   offProgress()
 })
 
+function newScanId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 async function start() {
+  if (running.value) return
+  starting.value = true
+  // The id is chosen here so events that arrive before StartScan returns
+  // are already recognised.
+  const id = newScanId()
+  scanId.value = id
+  found.value = []
+  checked.value = []
+  progress.value = null
   try {
-    results.value = []
-    checked.value = []
-    progress.value = null
-    const s = await api.discovery.startScan({ targets: targets.value, ipmiPort: ipmiPort.value, httpsPort: httpsPort.value })
-    scanId.value = s.scanId
-    const b = early.get(s.scanId)
-    early.clear()
-    progress.value = b?.progress ?? { scanId: s.scanId, done: 0, total: s.total, found: 0, finished: false, cancelled: false }
-    b?.found.forEach(addFound)
+    const s = await api.discovery.startScan({ scanId: id, targets: targets.value, ipmiPort: ipmiPort.value, httpsPort: httpsPort.value })
+    if (!progress.value) progress.value = { scanId: id, done: 0, total: s.total, found: 0, finished: false, cancelled: false }
   } catch (e) {
     message.error(errMsg(e))
+  } finally {
+    starting.value = false
   }
 }
 async function cancel() {
@@ -94,8 +96,6 @@ const credId = ref<number | null>(null)
 const username = ref('')
 const password = ref('')
 const adding = ref(false)
-const groupOptions = computed(() => [{ label: '未分组', value: 0 }, ...store.groups.map((g) => ({ label: g.name, value: g.id }))])
-const credOptions = computed(() => store.credentials.map((c) => ({ label: `${c.name}（${c.username}）`, value: c.id })))
 
 function openAdd() {
   credMode.value = store.credentials.length ? 'profile' : 'custom'
@@ -104,7 +104,8 @@ function openAdd() {
 }
 
 async function add() {
-  const hosts = results.value.filter((r) => checked.value.includes(r.host) && !r.managedId)
+  const picked = new Set(checked.value)
+  const hosts = found.value.filter((r) => picked.has(r.host) && !r.managedId)
   if (credMode.value === 'profile' && !credId.value) return message.warning('请选择凭据')
   if (credMode.value === 'custom' && !username.value) return message.warning('请输入 BMC 用户名')
   adding.value = true
@@ -201,7 +202,7 @@ async function add() {
       </n-alert>
       <n-form label-placement="top">
         <n-form-item label="分组">
-          <n-select v-model:value="addGroup" :options="groupOptions" />
+          <n-select v-model:value="addGroup" :options="store.groupOptions" />
         </n-form-item>
         <n-form-item label="登录凭据">
           <n-radio-group v-model:value="credMode" size="small">
@@ -210,7 +211,7 @@ async function add() {
           </n-radio-group>
         </n-form-item>
         <n-form-item v-if="credMode === 'profile'" :show-label="false">
-          <n-select v-model:value="credId" :options="credOptions" placeholder="选择凭据" />
+          <n-select v-model:value="credId" :options="store.credentialOptions" placeholder="选择凭据" />
         </n-form-item>
         <n-grid v-else :cols="2" :x-gap="16">
           <n-form-item-gi label="BMC 用户名"><n-input v-model:value="username" placeholder="ADMIN" /></n-form-item-gi>

@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -94,6 +95,12 @@ func (c *caller) methods() map[string][]string {
 }
 
 func (c *caller) call(w http.ResponseWriter, r *http.Request) {
+	// A custom header forces a CORS preflight, which this server never
+	// answers, so other web pages cannot make calls (CSRF).
+	if r.Header.Get("X-Mdbmc-Bridge") != "1" || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	var req struct {
 		Service string            `json:"service"`
 		Method  string            `json:"method"`
@@ -146,7 +153,7 @@ const bridgeJS = `(function(){
     methods[svc].forEach(function (m) {
       window.go.app[svc][m] = function () {
         var args = Array.prototype.slice.call(arguments);
-        return fetch('/call', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        return fetch('/call', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Mdbmc-Bridge': '1' },
           body: JSON.stringify({ service: svc, method: m, args: args }) })
           .then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw t; }); })
           .then(function (j) { if (j.error !== undefined) throw j.error; return j.result; });
@@ -174,6 +181,20 @@ const bridgeJS = `(function(){
     });
   };
 })();`
+
+// loopbackOnly rejects requests whose Host header is not the address we
+// listen on, which defeats DNS-rebinding pages reading responses.
+func loopbackOnly(addr string, next http.Handler) http.Handler {
+	_, port, _ := net.SplitHostPort(addr)
+	allowed := map[string]bool{addr: true, "127.0.0.1:" + port: true, "localhost:" + port: true, "[::1]:" + port: true}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !allowed[r.Host] {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:34115", "listen address (keep it on loopback)")
@@ -240,5 +261,5 @@ func main() {
 	})
 	log.Printf("data dir %s", dir)
 	log.Printf("open http://%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	log.Fatal(http.ListenAndServe(*addr, loopbackOnly(*addr, mux)))
 }

@@ -107,6 +107,10 @@ func (i *ipmiConn) power(ctx context.Context, a PowerAction) error {
 	default:
 		return fmt.Errorf("未知电源操作 %q", a)
 	}
+	if !a.Idempotent() {
+		// A retransmitted reset could reset the host a second time.
+		i.c.WithRetry(0)
+	}
 	_, err := i.c.ChassisControl(ctx, ctl)
 	return err
 }
@@ -177,17 +181,38 @@ func convertIPMISensor(s *types.Sensor) Sensor {
 	return out
 }
 
-// discreteStatus rates a discrete sensor by the names of its asserted states.
+// discreteStatus rates a discrete sensor by the names of its asserted
+// states ("a, b, c"), keeping the most severe one.
 func discreteStatus(text string) string {
-	t := strings.ToLower(text)
+	worst := "ok"
+	for _, state := range strings.Split(strings.ToLower(text), ",") {
+		switch rateState(strings.TrimSpace(state)) {
+		case "critical":
+			return "critical"
+		case "warning":
+			worst = "warning"
+		}
+	}
+	return worst
+}
+
+func rateState(s string) string {
+	has := func(words ...string) bool {
+		for _, w := range words {
+			if strings.Contains(s, w) {
+				return true
+			}
+		}
+		return false
+	}
 	switch {
-	case t == "":
+	case s == "":
 		return "ok"
-	case strings.Contains(t, "redundancy"), strings.Contains(t, "degraded"),
-		strings.Contains(t, "predictive"), strings.Contains(t, "warning"):
+	// Degraded but still running: checked first so "Predictive Failure" and
+	// "Redundancy Lost" are not caught by "fail"/"lost" below.
+	case has("predictive", "redundancy", "degraded", "warning"):
 		return "warning"
-	case strings.Contains(t, "fail"), strings.Contains(t, "fault"), strings.Contains(t, "lost"),
-		strings.Contains(t, "critical"), strings.Contains(t, "uncorrectable"), strings.Contains(t, "non-recoverable"):
+	case has("fail", "fault", "lost", "critical", "uncorrectable", "non-recoverable"):
 		return "critical"
 	}
 	return "ok"

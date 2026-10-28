@@ -72,6 +72,12 @@ const (
 	ActionCycle PowerAction = "cycle" // power off, then on
 )
 
+// Idempotent reports whether repeating the action is harmless (the host ends
+// up in the same state). Resets and power cycles are not.
+func (a PowerAction) Idempotent() bool {
+	return a == ActionOn || a == ActionOff || a == ActionSoft
+}
+
 // Valid reports whether a is a known action.
 func (a PowerAction) Valid() bool {
 	switch a {

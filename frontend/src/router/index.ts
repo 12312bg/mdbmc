@@ -39,7 +39,9 @@ router.beforeEach(async (to) => {
     try {
       await session.refresh()
     } catch {
-      return true
+      // Without the backend state no permission check can run; only the
+      // login page is safe to show.
+      return to.name === 'login' ? true : { name: 'login' }
     }
   }
   const initialized = session.status?.initialized

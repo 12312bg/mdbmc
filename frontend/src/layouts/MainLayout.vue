@@ -62,6 +62,15 @@ watch(() => session.loggedIn, (v) => {
 })
 
 const forced = computed(() => !!session.user?.mustChangePassword)
+// The backend refuses everything until the initial password is changed, so
+// reload settings and data and remount the page afterwards.
+const viewKey = ref(0)
+watch(forced, async (now, before) => {
+  if (before && !now) {
+    await Promise.all([session.loadSettings(), devices.load()])
+    viewKey.value++
+  }
+})
 
 // Idle lock: logs out (wiping the vault key) after inactivity.
 let idleTimer: number | undefined
@@ -79,6 +88,7 @@ onMounted(async () => {
     }
   }, 15_000)
   devices.subscribe()
+  if (forced.value) return
   await devices.load()
   try {
     const ov = await api.bmc.overview()
@@ -170,7 +180,7 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
       </n-layout-header>
       <n-layout-content class="content" :native-scrollbar="false">
         <router-view v-slot="{ Component: View }">
-          <component :is="View" :key="route.path" />
+          <component :is="View" :key="`${route.path}#${viewKey}`" />
         </router-view>
       </n-layout-content>
     </n-layout>

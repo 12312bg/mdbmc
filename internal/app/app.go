@@ -190,23 +190,34 @@ func (a *App) credentialsFor(ctx context.Context, s *auth.Session, d *store.Devi
 }
 
 // withClient runs fn with a BMC client for device id under the concurrency
-// limits, then pins a first-seen TLS certificate.
-func (a *App) withClient(ctx context.Context, s *auth.Session, id int64, fn func(*store.Device, *bmc.Client) error) (*store.Device, error) {
+// limits, then pins a first-seen TLS certificate. The timeout starts once a
+// concurrency slot is free, so waiting in the queue does not eat into it.
+func (a *App) withClient(ctx context.Context, s *auth.Session, id int64, timeout time.Duration,
+	fn func(context.Context, *store.Device, *bmc.Client) error) (*store.Device, error) {
+	if a.auth.Current() != s {
+		return nil, auth.ErrNotLoggedIn
+	}
 	d, err := a.store.DeviceByID(ctx, id)
 	if err != nil {
 		return nil, err
-	}
-	t, err := a.target(ctx, s, d)
-	if err != nil {
-		return d, err
 	}
 	release, err := a.acquire(ctx, id)
 	if err != nil {
 		return d, err
 	}
 	defer release()
+	// The user may have logged out while this operation was queued.
+	if a.auth.Current() != s {
+		return d, auth.ErrNotLoggedIn
+	}
+	t, err := a.target(ctx, s, d)
+	if err != nil {
+		return d, err
+	}
+	opCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	c := bmc.New(t)
-	err = fn(d, c)
+	err = fn(opCtx, d, c)
 	c.Close()
 	a.pinIfFirst(d, c.ObservedFingerprint)
 	return d, err
@@ -214,7 +225,7 @@ func (a *App) withClient(ctx context.Context, s *auth.Session, id int64, fn func
 
 func (a *App) pinIfFirst(d *store.Device, observed string) {
 	if d.TLSFingerprint == "" && observed != "" {
-		if err := a.store.SetTLSFingerprint(context.Background(), d.ID, observed); err == nil {
+		if ok, err := a.store.PinTLSFingerprint(context.Background(), d.ID, d.Host, d.HTTPSPort, observed); err == nil && ok {
 			d.TLSFingerprint = observed
 		}
 	}

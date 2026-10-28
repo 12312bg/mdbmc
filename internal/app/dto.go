@@ -247,8 +247,10 @@ type ConsoleResult struct {
 	Hint      string `json:"hint"`
 }
 
-// ScanRequest starts a discovery scan.
+// ScanRequest starts a discovery scan. ScanID is chosen by the caller so it
+// can match progress events that arrive before StartScan returns.
 type ScanRequest struct {
+	ScanID    string `json:"scanId"`
 	Targets   string `json:"targets"`
 	IPMIPort  int    `json:"ipmiPort"`
 	HTTPSPort int    `json:"httpsPort"`

@@ -293,6 +293,7 @@ export interface ConsoleResult {
 }
 
 export interface ScanRequest {
+  scanId: string
   targets: string
   ipmiPort: number
   httpsPort: number

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -54,10 +55,9 @@ func (s *BMCService) Power(ids []int64, action string) (*BatchResult, error) {
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(s.a.bg(), 60*time.Second)
-			defer cancel()
+			ctx := s.a.bg()
 			var via bmc.Protocol
-			d, err := s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+			d, err := s.a.withClient(ctx, sess, id, 60*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 				var err error
 				via, err = c.Power(ctx, act)
 				return err
@@ -97,9 +97,8 @@ func (s *BMCService) IdentifyLED(id int64, on bool) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 30*time.Second)
-	defer cancel()
-	d, err := s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	ctx := s.a.bg()
+	d, err := s.a.withClient(ctx, sess, id, 30*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		if on {
 			return c.IdentifyLED(ctx, 0, true)
 		}
@@ -119,10 +118,9 @@ func (s *BMCService) Sensors(id int64) (*SensorsResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 120*time.Second)
-	defer cancel()
+	ctx := s.a.bg()
 	res := &SensorsResult{}
-	_, err = s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	_, err = s.a.withClient(ctx, sess, id, 120*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		sensors, via, err := c.Sensors(ctx)
 		res.Sensors, res.Via = sensors, string(via)
 		return err
@@ -143,10 +141,9 @@ func (s *BMCService) SEL(id int64) (*SELResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 120*time.Second)
-	defer cancel()
+	ctx := s.a.bg()
 	res := &SELResult{}
-	_, err = s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	_, err = s.a.withClient(ctx, sess, id, 120*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		entries, via, err := c.SEL(ctx)
 		res.Entries, res.Via = entries, string(via)
 		return err
@@ -167,9 +164,8 @@ func (s *BMCService) ClearSEL(id int64) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 60*time.Second)
-	defer cancel()
-	d, err := s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	ctx := s.a.bg()
+	d, err := s.a.withClient(ctx, sess, id, 60*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		_, err := c.ClearSEL(ctx)
 		return err
 	})
@@ -192,10 +188,9 @@ func (s *BMCService) Inventory(id int64, refresh bool) (*InventoryResult, error)
 			}
 		}
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 180*time.Second)
-	defer cancel()
+	ctx := s.a.bg()
 	var inv *bmc.Inventory
-	_, err = s.a.withClient(ctx, sess, id, func(_ *store.Device, c *bmc.Client) error {
+	_, err = s.a.withClient(ctx, sess, id, 180*time.Second, func(ctx context.Context, _ *store.Device, c *bmc.Client) error {
 		var err error
 		inv, err = c.Inventory(ctx)
 		return err
@@ -246,11 +241,10 @@ func (s *BMCService) OpenKVM(id int64) (*ConsoleResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(s.a.bg(), 45*time.Second)
-	defer cancel()
+	ctx := s.a.bg()
 	var spec *bmc.LaunchSpec
 	var user, pass string
-	d, err := s.a.withClient(ctx, sess, id, func(d *store.Device, c *bmc.Client) error {
+	d, err := s.a.withClient(ctx, sess, id, 45*time.Second, func(ctx context.Context, d *store.Device, c *bmc.Client) error {
 		var err error
 		if spec, err = c.KVMLaunch(ctx); err != nil {
 			return err
@@ -272,10 +266,11 @@ func (s *BMCService) OpenKVM(id int64) (*ConsoleResult, error) {
 }
 
 // openConsole verifies the BMC certificate against the pin, then starts a
-// console window. The window's browser accepts the self-signed certificate,
-// so the identity check happens here.
+// console window whose browser accepts only that certificate's public key.
 func (a *App) openConsole(ctx context.Context, d *store.Device, spec *bmc.LaunchSpec, kind string) error {
-	fp, err := bmc.ProbeCertificate(ctx, d.Host, d.HTTPSPort, d.TLSFingerprint)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cert, err := bmc.ProbeCertificate(ctx, d.Host, d.HTTPSPort, d.TLSFingerprint)
 	if err != nil {
 		var mm *bmc.FingerprintMismatchError
 		if errors.As(err, &mm) {
@@ -283,11 +278,15 @@ func (a *App) openConsole(ctx context.Context, d *store.Device, spec *bmc.Launch
 		}
 		return fmt.Errorf("无法连接 BMC Web 服务: %w", err)
 	}
-	a.pinIfFirst(d, fp)
+	a.pinIfFirst(d, cert.Fingerprint)
+	if cert.SPKIHash == "" {
+		log.Printf("console: cannot parse the certificate of %s; the window will accept any certificate", d.Host)
+	}
 	return a.launch(console.Request{
-		Title:   fmt.Sprintf("%s - %s", d.Name, kind),
-		Spec:    *spec,
-		Profile: filepath.Join(a.dataDir, "console", strconv.FormatInt(d.ID, 10)),
+		Title:    fmt.Sprintf("%s - %s", d.Name, kind),
+		Spec:     *spec,
+		Profile:  filepath.Join(a.dataDir, "console", strconv.FormatInt(d.ID, 10)),
+		SPKIHash: cert.SPKIHash,
 	})
 }
 

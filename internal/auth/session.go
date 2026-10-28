@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	ErrNotLoggedIn = errors.New("未登录或会话已锁定，请重新登录")
-	ErrForbidden   = errors.New("当前角色没有执行此操作的权限")
+	ErrNotLoggedIn        = errors.New("未登录或会话已锁定，请重新登录")
+	ErrForbidden          = errors.New("当前角色没有执行此操作的权限")
+	ErrMustChangePassword = errors.New("请先修改初始密码")
 )
 
 // Session is the logged-in user together with the unlocked vault.
@@ -23,28 +24,62 @@ type Session struct {
 	Role        Role
 	LoginAt     time.Time
 
-	dek []byte
-	box *vault.Box
+	mu         sync.Mutex
+	dek        []byte
+	closed     bool
+	mustChange bool
+	box        *vault.Box
 }
 
 // Box returns the vault box that seals and opens stored secrets.
 func (s *Session) Box() *vault.Box { return s.box }
 
-// DataKey returns the raw DEK, needed only to wrap it for another password.
-func (s *Session) DataKey() []byte { return s.dek }
+// DataKey returns a copy of the DEK, needed only to wrap it for another
+// password. It fails once the session has ended and the key was wiped.
+func (s *Session) DataKey() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrNotLoggedIn
+	}
+	return append([]byte(nil), s.dek...), nil
+}
+
+// MustChangePassword reports whether the user still has to replace an
+// initial or reset password before doing anything else.
+func (s *Session) MustChangePassword() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mustChange
+}
+
+// PasswordChanged lifts the must-change restriction.
+func (s *Session) PasswordChanged() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mustChange = false
+}
+
+func (s *Session) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vault.Zero(s.dek)
+	s.closed = true
+}
 
 // Can reports whether the session's role grants p.
 func (s *Session) Can(p Permission) bool { return s.Role.Can(p) }
 
-// NewSession builds a session from an unwrapped data key.
-func NewSession(userID int64, username, displayName string, role Role, dek []byte) (*Session, error) {
+// NewSession builds a session from an unwrapped data key. With mustChange
+// set, Require refuses everything until PasswordChanged is called.
+func NewSession(userID int64, username, displayName string, role Role, dek []byte, mustChange bool) (*Session, error) {
 	box, err := vault.NewBox(dek)
 	if err != nil {
 		return nil, err
 	}
 	return &Session{
 		UserID: userID, Username: username, DisplayName: displayName, Role: role,
-		LoginAt: time.Now(), dek: dek, box: box,
+		LoginAt: time.Now(), dek: dek, box: box, mustChange: mustChange,
 	}, nil
 }
 
@@ -94,16 +129,20 @@ func (m *Manager) Clear() {
 
 func (m *Manager) clearLocked() {
 	if m.current != nil {
-		vault.Zero(m.current.dek)
+		m.current.close()
 		m.current = nil
 	}
 }
 
-// Require returns the active session if it grants every permission in perms.
+// Require returns the active session if it grants every permission in perms
+// and the user is not still on an initial password.
 func (m *Manager) Require(perms ...Permission) (*Session, error) {
 	s := m.Current()
 	if s == nil {
 		return nil, ErrNotLoggedIn
+	}
+	if s.MustChangePassword() {
+		return nil, ErrMustChangePassword
 	}
 	for _, p := range perms {
 		if !s.Can(p) {

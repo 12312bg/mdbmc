@@ -32,6 +32,19 @@ type Request struct {
 	// Profile is the WebView2 user data folder, one per device so cookies
 	// and BMC sessions stay separate.
 	Profile string `json:"profile"`
+	// SPKIHash is the public key of the pinned BMC certificate (see
+	// bmc.CertInfo). The window accepts this self-signed key and nothing else.
+	SPKIHash string `json:"spkiHash"`
+}
+
+// browserArgs returns the WebView2 switches that make the window trust the
+// pinned BMC key. Without a key hash it falls back to accepting any
+// certificate, relying on the probe made just before the launch.
+func browserArgs(spkiHash string) string {
+	if spkiHash == "" {
+		return "--ignore-certificate-errors"
+	}
+	return "--ignore-certificate-errors-spki-list=" + spkiHash
 }
 
 // Launcher opens a console window.
@@ -74,7 +87,8 @@ func initScript(spec bmc.LaunchSpec) (string, error) {
 	nonce := make([]byte, 8)
 	_, _ = rand.Read(nonce)
 	cfg := map[string]any{
-		"host":      u.Host,
+		// location.host is lower case; host names are case-insensitive.
+		"host":      strings.ToLower(u.Host),
 		"autologin": spec.AutoLogin && spec.Username != "",
 		"user":      spec.Username,
 		"pass":      spec.Password,

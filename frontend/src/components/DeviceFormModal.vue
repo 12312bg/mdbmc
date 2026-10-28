@@ -36,8 +36,6 @@ watch(() => props.show, (s) => {
   showAdvanced.value = !!d && (d.ipmiPort !== 623 || d.httpsPort !== 443 || d.protocol !== 'auto')
 })
 
-const groupOptions = computed(() => [{ label: '未分组', value: 0 }, ...store.groups.map((g) => ({ label: g.name, value: g.id }))])
-const credOptions = computed(() => store.credentials.map((c) => ({ label: `${c.name}（${c.username}）`, value: c.id })))
 const protocolOptions = Object.entries(protocolLabel).map(([value, label]) => ({ label, value }))
 
 const rules: FormRules = {
@@ -87,7 +85,7 @@ async function submit() {
         </n-form-item-gi>
       </n-grid>
       <n-form-item label="分组" path="groupId">
-        <n-select v-model:value="form.groupId" :options="groupOptions" />
+        <n-select v-model:value="form.groupId" :options="store.groupOptions" />
       </n-form-item>
       <n-form-item label="登录凭据">
         <n-radio-group v-model:value="credMode" size="small">
@@ -96,7 +94,7 @@ async function submit() {
         </n-radio-group>
       </n-form-item>
       <n-form-item v-if="credMode === 'profile'" path="credentialId" :show-label="false">
-        <n-select v-model:value="form.credentialId" :options="credOptions" placeholder="选择凭据" />
+        <n-select v-model:value="form.credentialId" :options="store.credentialOptions" placeholder="选择凭据" />
       </n-form-item>
       <n-grid v-else :cols="2" :x-gap="16">
         <n-form-item-gi label="BMC 用户名" path="username">

@@ -35,3 +35,22 @@ func TestInitScriptEscapesCredentials(t *testing.T) {
 		t.Fatal("invalid URL accepted")
 	}
 }
+
+func TestInitScriptLowercasesHost(t *testing.T) {
+	s, err := initScript(bmc.LaunchSpec{URL: "https://BMC01.Corp.Local/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s, `"host":"bmc01.corp.local"`) {
+		t.Fatal("host should be lower-cased to match location.host")
+	}
+}
+
+func TestBrowserArgs(t *testing.T) {
+	if got := browserArgs("abc="); got != "--ignore-certificate-errors-spki-list=abc=" {
+		t.Fatalf("got %q", got)
+	}
+	if got := browserArgs(""); got != "--ignore-certificate-errors" {
+		t.Fatalf("got %q", got)
+	}
+}

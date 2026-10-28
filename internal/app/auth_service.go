@@ -87,7 +87,7 @@ func (s *AuthService) Setup(username, displayName, password string) (*UserInfo, 
 }
 
 func (s *AuthService) startSession(ctx context.Context, u *store.User, dek []byte) (*UserInfo, error) {
-	sess, err := auth.NewSession(u.ID, u.Username, u.DisplayName, auth.Role(u.Role), dek)
+	sess, err := auth.NewSession(u.ID, u.Username, u.DisplayName, auth.Role(u.Role), dek, u.MustChangePassword)
 	if err != nil {
 		return nil, err
 	}
@@ -146,9 +146,10 @@ func (s *AuthService) Logout() {
 // ChangePassword re-wraps the vault key with a new password.
 func (s *AuthService) ChangePassword(oldPassword, newPassword string) error {
 	ctx := s.a.bg()
-	sess, err := s.a.auth.Require()
-	if err != nil {
-		return err
+	// Not Require(): a user on an initial password must be able to change it.
+	sess := s.a.auth.Current()
+	if sess == nil {
+		return auth.ErrNotLoggedIn
 	}
 	if err := validatePassword(newPassword); err != nil {
 		return err
@@ -172,5 +173,8 @@ func (s *AuthService) ChangePassword(oldPassword, newPassword string) error {
 	}
 	err = s.a.store.UpdateUserKey(ctx, u.ID, salt, vault.DefaultKDF, wrapped, false)
 	s.a.audit(sess, "auth.password_change", u.Username, err, "")
+	if err == nil {
+		sess.PasswordChanged()
+	}
 	return err
 }
