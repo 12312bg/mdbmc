@@ -3,11 +3,7 @@
 package console
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,11 +11,9 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
-	"syscall"
 	"unsafe"
 
 	"github.com/wailsapp/go-webview2/pkg/edge"
-	"github.com/wailsapp/go-webview2/pkg/webview2"
 	"golang.org/x/sys/windows"
 )
 
@@ -142,76 +136,6 @@ func createWindow(title string, width, height int32) uintptr {
 		fail("CreateWindowEx: %v", err)
 	}
 	return hwnd
-}
-
-// certPinner allows a TLS certificate error only for the certificate whose
-// SHA-256 fingerprint was pinned for the device; everything else is refused.
-type certPinner struct {
-	fingerprint string
-}
-
-func (p *certPinner) QueryInterface(_, _ uintptr) uintptr { return 0 }
-func (p *certPinner) AddRef() uintptr                     { return 1 }
-func (p *certPinner) Release() uintptr                    { return 1 }
-
-func (p *certPinner) ServerCertificateErrorDetected(_ *webview2.ICoreWebView2, args *webview2.ICoreWebView2ServerCertificateErrorDetectedEventArgs) uintptr {
-	var action webview2.COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION = webview2.COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION_CANCEL
-	if fp, err := serverFingerprint(args); err != nil {
-		fmt.Fprintf(os.Stderr, "读取 BMC 证书失败: %v\n", err)
-	} else if p.fingerprint != "" && strings.EqualFold(fp, p.fingerprint) {
-		action = webview2.COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION_ALWAYS_ALLOW
-	}
-	_ = args.PutAction(action)
-	return 0
-}
-
-// serverFingerprint returns the hex SHA-256 of the certificate that caused
-// the error, the same form as bmc.Fingerprint.
-func serverFingerprint(args *webview2.ICoreWebView2ServerCertificateErrorDetectedEventArgs) (string, error) {
-	cert, err := args.GetServerCertificate()
-	if err != nil {
-		return "", err
-	}
-	if cert == nil {
-		return "", errors.New("no certificate")
-	}
-	defer cert.Vtbl.Release.Call(uintptr(unsafe.Pointer(cert)))
-	// Called through the vtable: the wrapper's ToPemEncoding passes a nil
-	// out pointer.
-	var out *uint16
-	hr, _, _ := cert.Vtbl.ToPemEncoding.Call(uintptr(unsafe.Pointer(cert)), uintptr(unsafe.Pointer(&out)))
-	if windows.Handle(hr) != windows.S_OK {
-		return "", syscall.Errno(hr)
-	}
-	pemText := windows.UTF16PtrToString(out)
-	windows.CoTaskMemFree(unsafe.Pointer(out))
-	block, _ := pem.Decode([]byte(pemText))
-	if block == nil {
-		return "", errors.New("invalid PEM")
-	}
-	sum := sha256.Sum256(block.Bytes)
-	return hex.EncodeToString(sum[:]), nil
-}
-
-// pinned keeps the COM handler reachable for the lifetime of the window.
-var pinned *webview2.ICoreWebView2ServerCertificateErrorDetectedEventHandler
-
-func installCertPinning(c *edge.Chromium, fingerprint string) {
-	// edge and webview2 describe the same COM objects; only the Go wrapper
-	// types differ.
-	ctrl := (*webview2.ICoreWebView2Controller)(unsafe.Pointer(c.GetController()))
-	wv, err := ctrl.GetCoreWebView2()
-	if err != nil || wv == nil {
-		fail("无法获取 WebView2 实例: %v", err)
-	}
-	wv14 := wv.GetICoreWebView2_14()
-	if wv14 == nil {
-		fail("WebView2 运行时版本过旧，无法校验 BMC 证书。请更新 Microsoft Edge WebView2 Runtime。")
-	}
-	pinned = webview2.NewICoreWebView2ServerCertificateErrorDetectedEventHandler(&certPinner{fingerprint: fingerprint})
-	if _, err := wv14.AddServerCertificateErrorDetected(pinned); err != nil {
-		fail("注册证书校验失败: %v", err)
-	}
 }
 
 // RunWindow is the entry point of a console window process.
