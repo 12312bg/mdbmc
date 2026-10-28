@@ -303,3 +303,10 @@ func TestOnlyLoadingPageOpensTheBMC(t *testing.T) {
 		t.Fatal("an error page must not reopen the BMC by itself")
 	}
 }
+
+func TestStatusPagesAreMarked(t *testing.T) {
+	// The auto-login script skips pages with this marker.
+	if !strings.Contains(page{Tone: "error"}.render(), `<meta name="mdbmc-status" content="error">`) {
+		t.Fatal("status pages must carry the mdbmc-status marker")
+	}
+}

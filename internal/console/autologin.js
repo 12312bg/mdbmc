@@ -1,5 +1,5 @@
 // Injected into every document of a console window. It only acts on the
-// BMC's own origin: it fills the login form once, then optionally opens the
+// BMC's pages (served through the window's proxy): it fills the login form once, then optionally opens the
 // page given as "after" (e.g. the KVM viewer) once the login went through.
 (function (cfg) {
   if (window.top !== window || location.host.toLowerCase() !== cfg.host) return;
@@ -74,7 +74,12 @@
     set('submitted');
     setTimeout(function () { submit(pw); report('submitted', location.pathname); afterLogin(); }, 300);
   }
-  function start() { report('loaded', location.pathname); attempt(0); }
+  function start() {
+    // The proxy's own error pages carry this marker; there is nothing to log in to.
+    if (document.querySelector('meta[name="mdbmc-status"]')) { report('status-page', location.pathname); return; }
+    report('loaded', location.pathname);
+    attempt(0);
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })(__MDBMC_CONFIG__);

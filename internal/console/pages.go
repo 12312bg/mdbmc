@@ -23,6 +23,7 @@ const openMessage = "mdbmc:open"
 var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="mdbmc-status" content="{{.Tone}}">
 <title>{{.Title}}</title>
 <style>
 :root{color-scheme:light;--bg:#f4f6f9;--surface:#fff;--border:#e6e8ec;--text-1:#14171c;--text-2:#4b5563;--text-3:#8a93a0;--accent:#2a78d6;--accent-soft:#e8f1fc;--danger:#d03b3b;--danger-soft:#fdeeee;--warning:#b86e00;--warning-soft:#fff4dc;--code:#f7f8fa}

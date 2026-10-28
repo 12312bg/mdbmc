@@ -112,23 +112,25 @@ func TestConsoleWindowSmoke(t *testing.T) {
 
 	t.Run("other certificate is refused", func(t *testing.T) {
 		_, events := open(t, strings.Repeat("00", 32))
-		refused := false
+		refused, shown := false, false
 		deadline := time.After(20 * time.Second)
 		for {
 			select {
 			case ev := <-events:
 				t.Logf("event: %s", ev)
-				if strings.HasPrefix(ev, "loaded") {
+				switch {
+				case strings.HasPrefix(ev, "loaded"):
 					t.Fatalf("BMC page loaded although its certificate is not pinned: %s", ev)
-				}
-				if strings.HasPrefix(ev, "proxy-error") && strings.Contains(ev, "不一致") {
+				case strings.HasPrefix(ev, "proxy-error") && strings.Contains(ev, "不一致"):
 					refused = true
+				case strings.HasPrefix(ev, "status-page"):
+					shown = true // the proxy's error page, not a blank window
 				}
 			case got := <-logins:
 				t.Fatalf("credentials sent to a server with an unpinned certificate: %q", got)
 			case <-deadline:
-				if !refused {
-					t.Fatal("the proxy did not report the certificate mismatch")
+				if !refused || !shown {
+					t.Fatalf("certificate mismatch reported=%v, error page shown=%v", refused, shown)
 				}
 				return
 			}
