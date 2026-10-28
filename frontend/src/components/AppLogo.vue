@@ -1,14 +1,38 @@
 <script setup lang="ts">
-defineProps<{ size?: number; inverse?: boolean }>()
+import logo from '@/assets/logo.png'
+
+// plate puts the logo on a white tile so the blue mark stays visible on
+// dark backgrounds: 'always', or only in the dark theme.
+withDefaults(defineProps<{ size?: number; plate?: 'always' | 'dark' }>(), { size: 32 })
 </script>
 
 <template>
-  <svg :width="size ?? 32" :height="size ?? 32" viewBox="0 0 32 32" aria-hidden="true">
-    <rect x="1" y="1" width="30" height="30" rx="8" fill="#2a78d6" />
-    <rect x="7" y="8" width="18" height="5" rx="1.5" fill="#fff" opacity="0.95" />
-    <rect x="7" y="15" width="18" height="5" rx="1.5" fill="#fff" opacity="0.75" />
-    <rect x="7" y="22" width="18" height="3" rx="1.5" fill="#fff" opacity="0.55" />
-    <circle cx="22" cy="10.5" r="1.3" fill="#0ca30c" />
-    <circle cx="22" cy="17.5" r="1.3" fill="#0ca30c" />
-  </svg>
+  <span
+    class="app-logo"
+    :class="plate && `plate-${plate}`"
+    :style="{ width: `${size}px`, height: `${size}px`, '--plate-pad': `${Math.round(size * 0.14)}px` }"
+  >
+    <img :src="logo" alt="" draggable="false" />
+  </span>
 </template>
+
+<style>
+.app-logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 22%;
+}
+.app-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.app-logo.plate-always,
+:root[data-theme='dark'] .app-logo.plate-dark {
+  padding: var(--plate-pad);
+  background: #fff;
+}
+</style>

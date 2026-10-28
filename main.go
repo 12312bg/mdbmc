@@ -77,7 +77,7 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:     "MDBMC 服务器带外管理",
+		Title:     "明点服务器管理系统",
 		Width:     1400,
 		Height:    880,
 		MinWidth:  1100,

@@ -9,8 +9,8 @@ const session = useSession()
   <div class="auth">
     <aside class="hero">
       <div class="hero-top">
-        <AppLogo :size="36" />
-        <span class="hero-brand">MDBMC</span>
+        <AppLogo :size="40" plate="always" />
+        <span class="hero-brand">明点服务器管理系统</span>
       </div>
       <div class="hero-body">
         <h1>多品牌服务器<br />带外统一管理</h1>
@@ -71,7 +71,7 @@ const session = useSession()
 .hero-brand {
   font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 .hero-body {
   margin-top: 12vh;

@@ -134,10 +134,10 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
       @expand="collapsed = false"
     >
       <div class="brand">
-        <AppLogo :size="30" />
+        <AppLogo :size="30" plate="dark" />
         <div v-if="!collapsed" class="brand-text">
-          <div class="brand-name">MDBMC</div>
-          <div class="brand-sub">服务器带外管理</div>
+          <div class="brand-name">明点</div>
+          <div class="brand-sub">服务器管理系统</div>
         </div>
       </div>
       <n-menu :value="activeKey" :options="menu" :collapsed="collapsed" :collapsed-width="64" :collapsed-icon-size="20" :indent="20" />

@@ -8,10 +8,10 @@
   "frontend:dev:serverUrl": "auto",
   "wailsjsdir": "./frontend/src",
   "info": {
-    "companyName": "MDBMC",
-    "productName": "MDBMC 服务器带外管理",
+    "companyName": "明点",
+    "productName": "明点服务器管理系统",
     "productVersion": "0.1.0",
-    "copyright": "MDBMC",
+    "copyright": "Copyright © 明点",
     "comments": "多品牌服务器 IPMI / Redfish 统一管理"
   }
 }

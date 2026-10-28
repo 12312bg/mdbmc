@@ -54,5 +54,5 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · MDBMC` : 'MDBMC'
+  document.title = to.meta.title ? `${to.meta.title} · 明点服务器管理系统` : '明点服务器管理系统'
 })
