@@ -4,6 +4,10 @@
 (function (cfg) {
   if (window.top !== window || location.host.toLowerCase() !== cfg.host) return;
   var KEY = '__mdbmc_' + cfg.nonce;
+  // Progress reports to the window process (logged, and used by tests).
+  function report(name, detail) {
+    try { if (window.__mdbmcEvent) window.__mdbmcEvent(name, String(detail || '')); } catch (e) {}
+  }
   function get() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
   function set(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }
   function visible(el) { return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length)); }
@@ -68,8 +72,9 @@
     if (user) setValue(user, cfg.user);
     setValue(pw, cfg.pass);
     set('submitted');
-    setTimeout(function () { submit(pw); afterLogin(); }, 300);
+    setTimeout(function () { submit(pw); report('submitted', location.pathname); afterLogin(); }, 300);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { attempt(0); });
-  else attempt(0);
+  function start() { report('loaded', location.pathname); attempt(0); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })(__MDBMC_CONFIG__);

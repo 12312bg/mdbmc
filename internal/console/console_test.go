@@ -1,11 +1,29 @@
 package console
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/12312bg/mdbmc/internal/bmc"
 )
+
+// TestMain lets the test binary act as the console window process, the way
+// the real executable does when started with Flag.
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == Flag {
+		RunWindow()
+		return
+	}
+	os.Exit(m.Run())
+}
+
+func TestChildEnvDropsWebView2Vars(t *testing.T) {
+	got := childEnv([]string{"PATH=/bin", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER=", "webview2_user_data_folder=x", "HOME=/root"})
+	if len(got) != 2 || got[0] != "PATH=/bin" || got[1] != "HOME=/root" {
+		t.Fatalf("childEnv = %v", got)
+	}
+}
 
 func TestInitScriptEscapesCredentials(t *testing.T) {
 	s, err := initScript(bmc.LaunchSpec{
