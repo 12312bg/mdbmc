@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -35,10 +34,14 @@ const (
 	// ICoreWebView2_14, after the methods inherited from ICoreWebView2..._13.
 	slotAddServerCertificateErrorDetected = 106
 	// ICoreWebView2ServerCertificateErrorDetectedEventArgs
+	slotGetRequestURI        = 4
 	slotGetServerCertificate = 5
 	slotPutAction            = 7
 	// ICoreWebView2Certificate
 	slotToPemEncoding = 9
+	// ICoreWebView2NavigationCompletedEventArgs
+	slotGetIsSuccess      = 3
+	slotGetWebErrorStatus = 4
 )
 
 // COREWEBVIEW2_SERVER_CERTIFICATE_ERROR_ACTION
@@ -56,11 +59,13 @@ type comObject struct {
 
 // certErrorHandler implements
 // ICoreWebView2ServerCertificateErrorDetectedEventHandler. It allows a
-// certificate error only for the certificate whose SHA-256 fingerprint was
-// pinned for the device; everything else is refused.
+// certificate error only for the certificates whose SHA-256 fingerprints it
+// was given; everything else is refused.
 type certErrorHandler struct {
-	vtbl        *[4]uintptr
-	fingerprint string
+	vtbl    *[4]uintptr
+	allowed []string
+	// decided is told about every decision.
+	decided func(allowed bool, uri, fingerprint string)
 }
 
 // The handler and its vtable are handed to native code and must stay
@@ -85,13 +90,41 @@ func handlerRelease(*certErrorHandler) uintptr { return 1 }
 
 func handlerInvoke(this *certErrorHandler, _, args *comObject) uintptr {
 	action := uintptr(certActionCancel)
-	if fp, err := serverFingerprint(args); err != nil {
-		fmt.Fprintf(os.Stderr, "读取 BMC 证书失败: %v\n", err)
-	} else if this.fingerprint != "" && strings.EqualFold(fp, this.fingerprint) {
-		action = certActionAlwaysAllow
+	fp, err := serverFingerprint(args)
+	if err != nil {
+		fp = "（读取证书失败: " + err.Error() + "）"
+	} else {
+		for _, a := range this.allowed {
+			if a != "" && strings.EqualFold(fp, a) {
+				action = certActionAlwaysAllow
+			}
+		}
 	}
 	_, _, _ = syscall.SyscallN(args.vtbl[slotPutAction], uintptr(unsafe.Pointer(args)), action)
+	if this.decided != nil {
+		this.decided(action == certActionAlwaysAllow, comString(args, slotGetRequestURI), fp)
+	}
 	return 0
+}
+
+// comString calls a getter that returns a CoTaskMemAlloc'ed string.
+func comString(obj *comObject, slot int) string {
+	var text *uint16
+	hr, _, _ := syscall.SyscallN(obj.vtbl[slot], uintptr(unsafe.Pointer(obj)), uintptr(unsafe.Pointer(&text)))
+	if hr != 0 || text == nil {
+		return ""
+	}
+	defer windows.CoTaskMemFree(unsafe.Pointer(text))
+	return windows.UTF16PtrToString(text)
+}
+
+// navigationResult reads ICoreWebView2NavigationCompletedEventArgs.
+func navigationResult(args *edge.ICoreWebView2NavigationCompletedEventArgs) (ok bool, status int32) {
+	obj := (*comObject)(unsafe.Pointer(args))
+	var success int32
+	_, _, _ = syscall.SyscallN(obj.vtbl[slotGetIsSuccess], uintptr(unsafe.Pointer(obj)), uintptr(unsafe.Pointer(&success)))
+	_, _, _ = syscall.SyscallN(obj.vtbl[slotGetWebErrorStatus], uintptr(unsafe.Pointer(obj)), uintptr(unsafe.Pointer(&status)))
+	return success != 0, status
 }
 
 // serverFingerprint returns the hex SHA-256 of the certificate that caused
@@ -104,13 +137,10 @@ func serverFingerprint(args *comObject) (string, error) {
 	}
 	defer syscall.SyscallN(cert.vtbl[slotRelease], uintptr(unsafe.Pointer(cert)))
 
-	var text *uint16
-	hr, _, _ = syscall.SyscallN(cert.vtbl[slotToPemEncoding], uintptr(unsafe.Pointer(cert)), uintptr(unsafe.Pointer(&text)))
-	if hr != 0 || text == nil {
-		return "", fmt.Errorf("ToPemEncoding: %#x", hr)
+	pemText := comString(cert, slotToPemEncoding)
+	if pemText == "" {
+		return "", errors.New("ToPemEncoding failed")
 	}
-	pemText := windows.UTF16PtrToString(text)
-	windows.CoTaskMemFree(unsafe.Pointer(text))
 	block, _ := pem.Decode([]byte(pemText))
 	if block == nil {
 		return "", errors.New("invalid PEM")
@@ -120,8 +150,9 @@ func serverFingerprint(args *comObject) (string, error) {
 }
 
 // installCertPinning registers the certificate error handler on the
-// window's WebView2.
-func installCertPinning(c *edge.Chromium, fingerprint string) {
+// window's WebView2. Certificates with the allowed fingerprints are
+// accepted, all others refused; decided hears about each decision.
+func installCertPinning(c *edge.Chromium, allowed []string, decided func(allowed bool, uri, fingerprint string)) {
 	edgeView, err := c.GetController().GetCoreWebView2()
 	if err != nil || edgeView == nil {
 		fail("无法获取 WebView2 实例: %v", err)
@@ -140,7 +171,7 @@ func installCertPinning(c *edge.Chromium, fingerprint string) {
 		windows.NewCallback(handlerRelease),
 		windows.NewCallback(handlerInvoke),
 	}
-	handler = &certErrorHandler{vtbl: &handlerVtbl, fingerprint: fingerprint}
+	handler = &certErrorHandler{vtbl: &handlerVtbl, allowed: allowed, decided: decided}
 	var token int64 // EventRegistrationToken
 	hr, _, _ = syscall.SyscallN(view14.vtbl[slotAddServerCertificateErrorDetected], uintptr(unsafe.Pointer(view14)),
 		uintptr(unsafe.Pointer(handler)), uintptr(unsafe.Pointer(&token)))

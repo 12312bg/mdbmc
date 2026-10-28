@@ -105,19 +105,36 @@ func compatCipherSuites() []uint16 {
 	return ids
 }
 
-func newHTTPClient(p *pinner, timeout time.Duration) *http.Client {
+func newTransport(p *pinner) *http.Transport {
 	dialer := &net.Dialer{Timeout: 8 * time.Second, KeepAlive: 30 * time.Second}
-	return &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			Proxy:               nil, // BMCs live on the local management network
-			DialContext:         dialer.DialContext,
-			TLSClientConfig:     p.tlsConfig(),
-			TLSHandshakeTimeout: 10 * time.Second,
-			MaxIdleConnsPerHost: 2,
-			IdleConnTimeout:     30 * time.Second,
-		},
+	return &http.Transport{
+		Proxy:               nil, // BMCs live on the local management network
+		DialContext:         dialer.DialContext,
+		TLSClientConfig:     p.tlsConfig(),
+		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConnsPerHost: 2,
+		IdleConnTimeout:     30 * time.Second,
 	}
+}
+
+func newHTTPClient(p *pinner, timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: newTransport(p)}
+}
+
+// PinnedTransport returns a transport to the BMC web server that accepts
+// only the certificate with the given fingerprint, with the same legacy TLS
+// support as the IPMI/Redfish clients. Console windows reach the BMC web UI
+// through it. A different certificate fails with *FingerprintMismatchError.
+func PinnedTransport(fingerprint string) *http.Transport {
+	t := newTransport(&pinner{expected: fingerprint})
+	// Browsers open up to six connections per host and BMC web servers are
+	// sized for that; keep them alive instead of handshaking per request.
+	t.MaxIdleConnsPerHost = 6
+	t.IdleConnTimeout = 90 * time.Second
+	// Long enough for slow CGI pages, short enough that a hung BMC shows an
+	// error instead of a page that never finishes loading.
+	t.ResponseHeaderTimeout = 2 * time.Minute
+	return t
 }
 
 // CertInfo identifies a BMC certificate.

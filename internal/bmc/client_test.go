@@ -2,7 +2,10 @@ package bmc_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -237,5 +240,36 @@ func TestProbeCertificate(t *testing.T) {
 	}
 	if _, err := bmc.ProbeCertificate(ctx(t), "127.0.0.1", sim.HTTPSPort, strings.Repeat("00", 32)); err == nil {
 		t.Fatal("a different pinned fingerprint must be rejected")
+	}
+}
+
+// Old BMC firmware that only speaks TLS 1.0 with RSA key exchange stays
+// reachable over Redfish and for the console proxy's pinned transport.
+func TestLegacyTLSBMC(t *testing.T) {
+	sim := startSim(t, bmcsim.Options{LegacyTLS: true, DisableIPMI: true})
+	c := bmc.New(target(sim, bmc.ProtocolRedfish))
+	defer c.Close()
+	id, err := c.Identify(ctx(t))
+	if err != nil || !id.HasRedfish || id.TLSFingerprint != sim.Fingerprint {
+		t.Fatalf("identify legacy BMC: %+v, %v", id, err)
+	}
+	cert, err := bmc.ProbeCertificate(ctx(t), "127.0.0.1", sim.HTTPSPort, sim.Fingerprint)
+	if err != nil || cert.Fingerprint != sim.Fingerprint {
+		t.Fatalf("probe = %+v, %v", cert, err)
+	}
+	client := &http.Client{Transport: bmc.PinnedTransport(sim.Fingerprint)}
+	res, err := client.Get(fmt.Sprintf("https://127.0.0.1:%d/", sim.HTTPSPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || res.TLS.Version != tls.VersionTLS10 {
+		t.Fatalf("web page over pinned transport: %d, TLS %x", res.StatusCode, res.TLS.Version)
+	}
+	client = &http.Client{Transport: bmc.PinnedTransport(strings.Repeat("00", 32))}
+	_, err = client.Get(fmt.Sprintf("https://127.0.0.1:%d/", sim.HTTPSPort))
+	var mm *bmc.FingerprintMismatchError
+	if !errors.As(err, &mm) {
+		t.Fatalf("other pin: want FingerprintMismatchError, got %v", err)
 	}
 }

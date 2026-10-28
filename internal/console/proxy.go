@@ -1,0 +1,418 @@
+package console
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"math/big"
+	mrand "math/rand/v2"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/12312bg/mdbmc/internal/bmc"
+)
+
+// proxy is the local HTTPS endpoint a console window's browser talks to.
+//
+// Chromium refuses much of what BMC web servers still use: TLS 1.0/1.1,
+// 3DES, certificates it cannot parse or will not let a user override. The
+// IPMI/Redfish clients already reach these BMCs through Go's TLS stack, so
+// the console window does too: the browser only connects to this proxy on
+// a loopback address (with a throwaway certificate the window pins), and the
+// proxy forwards each request to the BMC through bmc.PinnedTransport, which
+// accepts nothing but the BMC's pinned certificate.
+//
+// The proxy listens on a random 127.x.y.z address, on the BMC's own port when
+// it is free, so pages that build URLs from location.hostname keep working.
+// Requests must carry a session cookie that only the window's start URL sets,
+// so other local programs cannot use the proxy.
+type proxy struct {
+	target *url.URL // https://bmc[:port]
+	ln     net.Listener
+	srv    *http.Server
+	rp     *httputil.ReverseProxy
+	host   string // location.host of the proxied pages
+	token  string
+	cookie string
+	// certFP is the fingerprint of the proxy's own certificate, which the
+	// window accepts.
+	certFP string
+	report func(name, detail string)
+
+	mu       sync.Mutex
+	reported map[string]time.Time
+}
+
+const (
+	startPath = "/__mdbmc/start"
+	// cookiePrefix marks the proxy's own cookies, which are not forwarded.
+	cookiePrefix = "__Host-mdbmc-"
+)
+
+// startProxy serves a proxy to the BMC whose web UI is at bmcURL and whose
+// certificate has the given fingerprint. report receives diagnostics.
+func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*proxy, error) {
+	u, err := url.Parse(bmcURL)
+	if err != nil || u.Host == "" || u.Scheme != "https" {
+		return nil, errors.New("无效的控制台地址")
+	}
+	if fingerprint == "" {
+		return nil, errors.New("缺少 BMC 证书指纹")
+	}
+	ln, err := listenLoopback(portOf(u))
+	if err != nil {
+		return nil, fmt.Errorf("无法监听本地端口: %w", err)
+	}
+	addr := ln.Addr().(*net.TCPAddr)
+	cert, certFP, err := selfSignedCert(addr.IP)
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	token := make([]byte, 16)
+	_, _ = rand.Read(token)
+	p := &proxy{
+		target:   &url.URL{Scheme: "https", Host: u.Host},
+		ln:       ln,
+		host:     hostPort(addr.IP.String(), addr.Port, 443),
+		token:    hex.EncodeToString(token),
+		cookie:   cookiePrefix + strconv.Itoa(addr.Port),
+		certFP:   certFP,
+		report:   report,
+		reported: map[string]time.Time{},
+	}
+	p.rp = &httputil.ReverseProxy{
+		Rewrite:        p.rewrite,
+		Transport:      bmc.PinnedTransport(fingerprint),
+		ModifyResponse: p.modifyResponse,
+		ErrorHandler:   p.upstreamError,
+		ErrorLog:       log.New(io.Discard, "", 0),
+	}
+	p.srv = &http.Server{
+		Handler:           p,
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		// BMC web servers speak HTTP/1.1, and WebSockets (HTML5 KVM) are
+		// only proxied over HTTP/1.1.
+		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			NextProtos:   []string{"http/1.1"},
+		},
+		ErrorLog: log.New(io.Discard, "", 0),
+	}
+	go func() { _ = p.srv.ServeTLS(ln, "", "") }()
+	return p, nil
+}
+
+func (p *proxy) Close() error { return p.srv.Close() }
+
+func (p *proxy) origin() string { return "https://" + p.host }
+
+// listenLoopback listens on a random 127.x.y.z address with the BMC's port,
+// falling back to 127.0.0.1 and a free port (port taken, or a system that
+// only routes 127.0.0.1).
+func listenLoopback(port int) (net.Listener, error) {
+	for range 3 {
+		ip := net.IPv4(127, byte(mrand.IntN(254)+1), byte(mrand.IntN(256)), byte(mrand.IntN(253)+2))
+		if ln, err := net.Listen("tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port))); err == nil {
+			return ln, nil
+		}
+	}
+	return net.Listen("tcp4", "127.0.0.1:0")
+}
+
+func selfSignedCert(ip net.IP) (tls.Certificate, string, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, "", err
+	}
+	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "MDBMC console proxy"},
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.Add(30 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{ip},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, "", err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, bmc.Fingerprint(der), nil
+}
+
+func portOf(u *url.URL) int {
+	if n, err := strconv.Atoi(u.Port()); err == nil {
+		return n
+	}
+	if u.Scheme == "http" || u.Scheme == "ws" {
+		return 80
+	}
+	return 443
+}
+
+func hostPort(host string, port, defaultPort int) string {
+	if port == defaultPort {
+		if strings.Contains(host, ":") {
+			return "[" + host + "]"
+		}
+		return host
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// isBMC reports whether an absolute URL points at the BMC's web server.
+func (p *proxy) isBMC(u *url.URL) bool {
+	if !strings.EqualFold(u.Hostname(), p.target.Hostname()) {
+		return false
+	}
+	switch u.Scheme {
+	case "https", "wss":
+		return portOf(u) == portOf(p.target)
+	case "http", "ws":
+		return true // plain-HTTP links and redirects to the same BMC
+	}
+	return false
+}
+
+// localURL maps a BMC URL to the same page through the proxy. Other URLs,
+// and relative ones, are returned unchanged.
+func (p *proxy) localURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || !p.isBMC(u) {
+		return raw
+	}
+	scheme := "https"
+	if u.Scheme == "ws" || u.Scheme == "wss" {
+		scheme = "wss"
+	}
+	out := *u
+	out.Scheme, out.Host = scheme, p.host
+	return out.String()
+}
+
+// startURL is the first URL a window opens: it sets the session cookie and
+// redirects to target, a BMC URL.
+func (p *proxy) startURL(target string) string {
+	next := "/"
+	if u, err := url.Parse(p.localURL(target)); err == nil && u.Host == p.host {
+		next = u.RequestURI()
+	}
+	return p.origin() + startPath + "?" + url.Values{"t": {p.token}, "next": {next}}.Encode()
+}
+
+// toBMC maps an Origin or Referer value of a proxied page to the BMC, which
+// may check them against its own address.
+func (p *proxy) toBMC(v string) string {
+	o := p.origin()
+	if v == o || strings.HasPrefix(v, o+"/") {
+		return p.target.Scheme + "://" + p.target.Host + v[len(o):]
+	}
+	return v
+}
+
+func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == startPath {
+		p.start(w, r)
+		return
+	}
+	c, err := r.Cookie(p.cookie)
+	if err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(p.token)) != 1 {
+		writePage(w, http.StatusForbidden, page{
+			Tone:    "error",
+			Title:   "此地址仅供控制台窗口使用",
+			Message: "请在明点服务器管理系统的设备列表中重新打开 Web 管理或远程控制台。",
+		})
+		return
+	}
+	p.rp.ServeHTTP(w, r)
+}
+
+func (p *proxy) start(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if subtle.ConstantTimeCompare([]byte(q.Get("t")), []byte(p.token)) != 1 {
+		writePage(w, http.StatusForbidden, page{
+			Tone:    "error",
+			Title:   "控制台链接已失效",
+			Message: "请在明点服务器管理系统的设备列表中重新打开 Web 管理或远程控制台。",
+		})
+		return
+	}
+	next := q.Get("next")
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+		next = "/"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: p.cookie, Value: p.token, Path: "/",
+		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+func (p *proxy) rewrite(pr *httputil.ProxyRequest) {
+	pr.SetURL(p.target)
+	h := pr.Out.Header
+	for _, k := range []string{"Origin", "Referer"} {
+		if v := h.Get(k); v != "" {
+			h.Set(k, p.toBMC(v))
+		}
+	}
+	// Forward the BMC's cookies, not the proxy's session cookie.
+	if cookies := h.Values("Cookie"); len(cookies) > 0 {
+		var keep []string
+		for _, line := range cookies {
+			for part := range strings.SplitSeq(line, ";") {
+				if part = strings.TrimSpace(part); part != "" && !strings.HasPrefix(part, cookiePrefix) {
+					keep = append(keep, part)
+				}
+			}
+		}
+		h.Del("Cookie")
+		if len(keep) > 0 {
+			h.Set("Cookie", strings.Join(keep, "; "))
+		}
+	}
+}
+
+func (p *proxy) modifyResponse(res *http.Response) error {
+	h := res.Header
+	for _, k := range []string{"Location", "Content-Location"} {
+		if v := h.Get(k); v != "" {
+			h.Set(k, p.localURL(v))
+		}
+	}
+	if v := h.Get("Access-Control-Allow-Origin"); v != "" && v != "*" {
+		if u, err := url.Parse(v); err == nil && p.isBMC(u) {
+			h.Set("Access-Control-Allow-Origin", p.origin())
+		}
+	}
+	// A Domain attribute naming the BMC would make the browser drop the
+	// cookie on the proxy's address.
+	if cookies := h.Values("Set-Cookie"); len(cookies) > 0 {
+		h.Del("Set-Cookie")
+		for _, c := range cookies {
+			h.Add("Set-Cookie", dropCookieDomain(c))
+		}
+	}
+	return nil
+}
+
+func dropCookieDomain(c string) string {
+	parts := strings.Split(c, ";")
+	out := parts[:1]
+	for _, a := range parts[1:] {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(a)), "domain=") {
+			out = append(out, a)
+		}
+	}
+	return strings.Join(out, ";")
+}
+
+func (p *proxy) upstreamError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, context.Canceled) {
+		return // the page went away
+	}
+	pg := describeUpstreamError(err)
+	pg.Target = p.target.Host
+	pg.Retry = p.startURL(p.target.String() + r.URL.RequestURI())
+	pg.Detail = fmt.Sprintf("%s %s\n%v", r.Method, r.URL.RequestURI(), err)
+	p.reportOnce("proxy-error", r.URL.Path+": "+err.Error())
+	writePage(w, http.StatusBadGateway, pg)
+}
+
+// reportOnce passes a diagnostic on, but not the same one again within a few
+// seconds (a page that fails loads many resources).
+func (p *proxy) reportOnce(name, detail string) {
+	if p.report == nil {
+		return
+	}
+	key := name + detail
+	p.mu.Lock()
+	last, seen := p.reported[key]
+	now := time.Now()
+	if !seen || now.Sub(last) > 10*time.Second {
+		p.reported[key] = now
+	}
+	p.mu.Unlock()
+	if !seen || now.Sub(last) > 10*time.Second {
+		p.report(name, detail)
+	}
+}
+
+func describeUpstreamError(err error) page {
+	var mm *bmc.FingerprintMismatchError
+	var netErr net.Error
+	var alert tls.AlertError
+	var recErr tls.RecordHeaderError
+	switch {
+	case errors.As(err, &mm):
+		return page{
+			Tone:    "warning",
+			Title:   "BMC 证书与已信任的不一致",
+			Message: "BMC 当前出示的证书与之前固定的证书不同，为防止中间人攻击，已拒绝连接。",
+			Hints: []string{
+				"如果确认 BMC 更换过证书（例如更新固件、重置 BMC 或上传了新证书），请在设备详情中点击“信任当前证书”，然后重新打开。",
+				"如果没有人更换过证书，请先排查网络中是否有设备冒用该 BMC 的地址。",
+			},
+		}
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return page{
+			Tone:    "error",
+			Title:   "连接 BMC 超时",
+			Message: "BMC 在规定时间内没有响应。",
+			Hints: []string{
+				"确认本机能访问 BMC 管理网络，且 BMC 的 HTTPS 端口没有被防火墙拦截。",
+				"BMC 的 Web 服务偶尔会卡住，可稍后重试；长时间无响应时需要重启 BMC。",
+			},
+		}
+	case errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "actively refused"):
+		return page{
+			Tone:    "error",
+			Title:   "BMC 拒绝了连接",
+			Message: "BMC 没有在该端口上提供 HTTPS 服务。",
+			Hints:   []string{"检查设备的 HTTPS 端口设置，以及 BMC 是否禁用了 Web 服务。"},
+		}
+	case errors.As(err, &alert), errors.As(err, &recErr):
+		return page{
+			Tone:    "error",
+			Title:   "与 BMC 建立加密连接失败",
+			Message: "BMC 不接受本软件支持的任何 TLS 版本或加密套件。",
+			Hints:   []string{"升级 BMC 固件通常可以解决。"},
+		}
+	}
+	return page{
+		Tone:    "error",
+		Title:   "无法打开 BMC 管理页面",
+		Message: "连接 BMC 的 Web 服务时出错。",
+		Hints:   []string{"确认 BMC 在线且本机能访问其管理网络，然后重新连接。"},
+	}
+}
+
+func writePage(w http.ResponseWriter, status int, pg page) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, pg.render())
+}

@@ -24,6 +24,7 @@ func main() {
 	httpsPort := flag.Int("https-port", 8443, "first HTTPS (Redfish/Web) port")
 	user := flag.String("user", "ADMIN", "BMC username")
 	pass := flag.String("password", "ADMIN", "BMC password")
+	legacyTLS := flag.Bool("legacy-tls", false, "HTTPS with TLS 1.0 and RSA key exchange only, like old BMC firmware")
 	flag.Parse()
 
 	certDir := filepath.Join(os.TempDir(), "mdbmc-bmcsim")
@@ -31,10 +32,15 @@ func main() {
 
 	var sims []*bmcsim.Sim
 	for i := 0; i < *count; i++ {
+		certFile := fmt.Sprintf("bmc-%d.pem", *httpsPort+i)
+		if *legacyTLS {
+			certFile = fmt.Sprintf("bmc-%d-legacy.pem", *httpsPort+i)
+		}
 		s, err := bmcsim.Start(bmcsim.Options{
 			Index: i, User: *user, Password: *pass, ListenHost: *host,
 			IPMIPort: *ipmiPort + i, HTTPSPort: *httpsPort + i,
-			CertFile: filepath.Join(certDir, fmt.Sprintf("bmc-%d.pem", *httpsPort+i)),
+			CertFile:  filepath.Join(certDir, certFile),
+			LegacyTLS: *legacyTLS,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "simulator %d: %v\n", i, err)

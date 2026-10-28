@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/wailsapp/go-webview2/pkg/edge"
@@ -33,6 +36,7 @@ var (
 	procLoadCursor       = user32.NewProc("LoadCursorW")
 	procLoadIcon         = user32.NewProc("LoadIconW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+	procPostMessage      = user32.NewProc("PostMessageW")
 )
 
 const (
@@ -45,6 +49,8 @@ const (
 	smCxScreen         = 0
 	smCyScreen         = 1
 	colorWindow        = 5
+	// wmRunQueued runs work queued with post on the window's thread.
+	wmRunQueued = 0x8000 + 1 // WM_APP + 1
 	// appIconID is the icon resource Wails embeds in the executable.
 	appIconID = 3
 )
@@ -74,11 +80,31 @@ type winMsg struct {
 	Private uint32
 }
 
-// browser is used by the window procedure; there is one window per process.
-var browser *edge.Chromium
+// The window and its browser; there is one window per process. They, and
+// everything below that is not marked otherwise, are only used on the
+// window's thread, where the WebView2 events arrive too.
+var (
+	mainHwnd uintptr
+	browser  *edge.Chromium
+	queued   []func()
+)
+
+// post runs f from the message loop, outside the WebView2 event that is
+// being handled.
+func post(f func()) {
+	queued = append(queued, f)
+	_, _, _ = procPostMessage.Call(mainHwnd, wmRunQueued, 0, 0)
+}
 
 func wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch msg {
+	case wmRunQueued:
+		q := queued
+		queued = nil
+		for _, f := range q {
+			f()
+		}
+		return 0
 	case wmSize:
 		if browser != nil {
 			browser.Resize()
@@ -156,15 +182,27 @@ func RunWindow() {
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&req); err != nil {
 		fail("控制台启动参数无效: %v", err)
 	}
-	script, err := initScript(req.Spec)
+	// The browser talks to the BMC through a local proxy; the page script
+	// and the first navigation use the proxied addresses.
+	px, err := startProxy(req.Spec.URL, req.CertFingerprint, reportEvent)
+	if err != nil {
+		fail("%v", err)
+	}
+	spec := req.Spec
+	spec.URL = px.localURL(spec.URL)
+	spec.AfterLoginURL = px.localURL(spec.AfterLoginURL)
+	script, err := initScript(spec)
 	if err != nil {
 		fail("%v", err)
 	}
 	if req.Profile != "" {
 		_ = os.MkdirAll(req.Profile, 0o700)
 	}
+	nav = navState{start: px.startURL(req.Spec.URL), target: px.target.Host}
+	reportEvent("proxy", px.origin()+" -> "+px.target.String())
 
 	hwnd := createWindow(req.Title, 1366, 900)
+	mainHwnd = hwnd
 	_, _, _ = procShowWindow.Call(hwnd, swShow)
 	_, _, _ = procUpdateWindow.Call(hwnd)
 
@@ -176,8 +214,33 @@ func RunWindow() {
 		}
 	})
 	c.MessageCallback = func(message string, _ *edge.ICoreWebView2, _ *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+		if message == openMessage {
+			post(func() { browser.Navigate(nav.start) })
+			return
+		}
 		if ev, ok := strings.CutPrefix(message, "mdbmc:"); ok {
-			fmt.Printf("%s%s\n", eventPrefix, ev)
+			name, detail, _ := strings.Cut(ev, "\t")
+			reportEvent(name, detail)
+		}
+	}
+	c.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, args *edge.ICoreWebView2NavigationCompletedEventArgs) {
+		ok, status := navigationResult(args)
+		nav.completed(ok, status)
+	}
+	c.ProcessFailedCallback = func(_ *edge.ICoreWebView2, args *edge.ICoreWebView2ProcessFailedEventArgs) {
+		kind, _ := args.GetProcessFailedKind()
+		reportEvent("process-failed", fmt.Sprint(kind))
+		switch kind {
+		case edge.COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED:
+			fail("WebView2 浏览器进程意外退出")
+		case edge.COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED:
+			nav.show(page{
+				Tone:    "error",
+				Title:   "页面意外退出",
+				Message: "显示 BMC 页面的进程意外结束了，可以重新连接。",
+				Target:  nav.target,
+				Retry:   nav.start,
+			})
 		}
 	}
 	browser = c
@@ -185,16 +248,26 @@ func RunWindow() {
 		fail("无法创建 WebView2 窗口。请确认已安装 Microsoft Edge WebView2 Runtime。")
 	}
 	c.Resize()
-	installCertPinning(c, req.CertFingerprint)
+	// The window accepts the proxy's certificate, and the BMC's pinned one
+	// for pages that link to the BMC's own address directly.
+	installCertPinning(c, []string{px.certFP, req.CertFingerprint}, nav.certDecision)
 	c.Init(script)
-	c.Navigate(req.Spec.URL)
+	// A status page stays on screen until the BMC's first page arrives;
+	// it asks for the BMC to be opened once it is shown (openMessage).
+	c.NavigateToString(page{
+		Tone:    "loading",
+		Title:   "正在连接 BMC",
+		Message: "正在打开管理页面。部分 BMC 响应较慢，可能需要十几秒。",
+		Target:  nav.target,
+	}.render())
 
 	_, _, _ = procSetForeground.Call(hwnd)
 	c.Focus()
 	if visible, _, _ := procIsWindowVisible.Call(hwnd); visible == 0 {
 		fail("控制台窗口已创建但不可见")
 	}
-	fmt.Println(readyLine)
+	reportEvent("window", strconv.FormatUint(uint64(hwnd), 10))
+	writeLine(readyLine)
 
 	var m winMsg
 	for {
@@ -205,4 +278,124 @@ func RunWindow() {
 		_, _, _ = procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		_, _, _ = procDispatchMessage.Call(uintptr(unsafe.Pointer(&m)))
 	}
+}
+
+// navState turns navigation failures into status pages, so the window never
+// stays blank.
+type navState struct {
+	start  string // proxy start URL, behind the reconnect button
+	target string // BMC address shown on status pages
+	// certPending: a navigation failed on a certificate error and the
+	// certificate event that decides it has not arrived yet.
+	certPending  bool
+	lastRejected time.Time
+	rejected     string
+}
+
+var nav navState
+
+func (n *navState) show(pg page) {
+	html := pg.render()
+	post(func() { browser.NavigateToString(html) })
+}
+
+func (n *navState) completed(ok bool, status int32) {
+	if ok {
+		n.certPending = false
+		return
+	}
+	reportEvent("navigation-failed", webErrorName(status))
+	switch {
+	case status >= webErrorCertCommonName && status <= webErrorCertInvalid:
+		// WebView2 reports the failed navigation before asking the
+		// certificate handler; an allowed certificate resumes it.
+		if time.Since(n.lastRejected) < 5*time.Second {
+			n.showCertRejected()
+		} else {
+			n.certPending = true
+		}
+	case isNetworkError(status):
+		n.show(page{
+			Tone:    "error",
+			Title:   "无法打开页面",
+			Message: networkErrorMessage(status),
+			Target:  n.target,
+			Hints:   []string{"确认 BMC 在线且本机能访问其管理网络，然后重新连接。"},
+			Detail:  "WebView2 WebErrorStatus: " + webErrorName(status),
+			Retry:   n.start,
+		})
+	}
+}
+
+// certDecision is called by the certificate handler.
+func (n *navState) certDecision(allowed bool, uri, fingerprint string) {
+	// Query strings can carry one-time tokens; keep them out of the log.
+	if u, err := url.Parse(uri); err == nil {
+		u.RawQuery, u.Fragment = "", ""
+		uri = u.String()
+	}
+	if allowed {
+		reportEvent("certificate-allowed", uri)
+		n.certPending = false
+		return
+	}
+	reportEvent("certificate-rejected", uri+" "+fingerprint)
+	n.lastRejected = time.Now()
+	n.rejected = uri + "\n证书指纹 " + fingerprint
+	if n.certPending {
+		n.certPending = false
+		n.showCertRejected()
+	}
+}
+
+func (n *navState) showCertRejected() {
+	n.show(page{
+		Tone:    "warning",
+		Title:   "页面证书未通过校验",
+		Message: "该页面使用的 HTTPS 证书不是此 BMC 已固定的证书，为安全起见已拒绝打开。",
+		Target:  n.target,
+		Hints: []string{
+			"如果 BMC 更换过证书，请在设备详情中点击“信任当前证书”，然后重新打开。",
+		},
+		Detail: n.rejected,
+		Retry:  n.start,
+	})
+}
+
+// COREWEBVIEW2_WEB_ERROR_STATUS values.
+const (
+	webErrorCertCommonName = 1
+	webErrorCertInvalid    = 5
+	webErrorTimeout        = 7
+	webErrorCanceled       = 14
+)
+
+var webErrorNames = []string{
+	"UNKNOWN", "CERTIFICATE_COMMON_NAME_IS_INCORRECT", "CERTIFICATE_EXPIRED",
+	"CLIENT_CERTIFICATE_CONTAINS_ERRORS", "CERTIFICATE_REVOKED", "CERTIFICATE_IS_INVALID",
+	"SERVER_UNREACHABLE", "TIMEOUT", "ERROR_HTTP_INVALID_SERVER_RESPONSE", "CONNECTION_ABORTED",
+	"CONNECTION_RESET", "DISCONNECTED", "CANNOT_CONNECT", "HOST_NAME_NOT_RESOLVED",
+	"OPERATION_CANCELED", "REDIRECT_FAILED", "UNEXPECTED_ERROR",
+	"VALID_AUTHENTICATION_CREDENTIALS_REQUIRED", "VALID_PROXY_AUTHENTICATION_REQUIRED",
+}
+
+func webErrorName(status int32) string {
+	if status >= 0 && int(status) < len(webErrorNames) {
+		return fmt.Sprintf("%d %s", status, webErrorNames[status])
+	}
+	return strconv.Itoa(int(status))
+}
+
+// isNetworkError reports failures that leave no page from the server. HTTP
+// error responses (UNKNOWN), cancelled navigations (including downloads)
+// and authentication prompts keep what WebView2 shows.
+func isNetworkError(status int32) bool {
+	return status > webErrorCertInvalid && status <= 16 && status != webErrorCanceled
+}
+
+func networkErrorMessage(status int32) string {
+	if status == webErrorTimeout {
+		return "页面加载超时。"
+	}
+	return "浏览器无法连接到该页面的服务器。"
 }
