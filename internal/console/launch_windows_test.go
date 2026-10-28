@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -110,6 +111,33 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		}
 	})
 
+	t.Run("window closes when the main program exits", func(t *testing.T) {
+		// The helper plays the main program: it opens a window and exits.
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		helper := exec.Command(exe, parentHelper)
+		helper.Env = append(os.Environ(), "MDBMC_TEST_URL="+srv.URL+"/", "MDBMC_TEST_FP="+pinned, "MDBMC_TEST_PROFILE="+t.TempDir())
+		out, err := helper.Output()
+		if err != nil {
+			t.Fatalf("helper: %v", err)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Fatalf("helper output %q", out)
+		}
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid))
+		if err != nil {
+			return // already gone
+		}
+		defer windows.CloseHandle(h)
+		if ev, _ := windows.WaitForSingleObject(h, 15000); ev != windows.WAIT_OBJECT_0 {
+			_ = windows.TerminateProcess(h, 1)
+			t.Fatal("the console window process outlived the main program")
+		}
+	})
+
 	t.Run("other certificate is refused", func(t *testing.T) {
 		_, events := open(t, strings.Repeat("00", 32))
 		refused, shown := false, false
@@ -136,6 +164,27 @@ func TestConsoleWindowSmoke(t *testing.T) {
 			}
 		}
 	})
+}
+
+// parentHelper makes the test binary open a console window, print the
+// window process's PID and exit, like the main program being closed.
+const parentHelper = "--console-test-parent"
+
+func init() {
+	testHelpers[parentHelper] = func() {
+		p, err := startWindow(Request{
+			Title:           "MDBMC parent exit test",
+			Spec:            bmc.LaunchSpec{URL: os.Getenv("MDBMC_TEST_URL")},
+			Profile:         os.Getenv("MDBMC_TEST_PROFILE"),
+			CertFingerprint: os.Getenv("MDBMC_TEST_FP"),
+		}, 60*time.Second, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(p.cmd.Process.Pid)
+		os.Exit(0)
+	}
 }
 
 var (

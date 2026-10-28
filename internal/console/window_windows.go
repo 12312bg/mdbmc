@@ -4,6 +4,7 @@ package console
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -43,6 +45,7 @@ const (
 	wsOverlappedWindow = 0x00CF0000
 	swShow             = 5
 	wmDestroy          = 0x0002
+	wmClose            = 0x0010
 	wmSize             = 0x0005
 	wmActivate         = 0x0006
 	idcArrow           = 32512
@@ -87,7 +90,29 @@ var (
 	mainHwnd uintptr
 	browser  *edge.Chromium
 	queued   []func()
+	// closeHwnd is mainHwnd for the parent watcher's goroutine.
+	closeHwnd atomic.Uintptr
 )
+
+// watchParent closes the window when the main program exits or crashes, so
+// console windows (and their WebView2 processes) do not outlive it.
+func watchParent() {
+	parent, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(os.Getppid()))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			os.Exit(0) // the main program is already gone
+		}
+		return
+	}
+	go func() {
+		_, _ = windows.WaitForSingleObject(parent, windows.INFINITE)
+		if h := closeHwnd.Load(); h != 0 {
+			_, _, _ = procPostMessage.Call(h, wmClose, 0, 0)
+			time.Sleep(3 * time.Second) // the window normally closes first
+		}
+		os.Exit(0)
+	}()
+}
 
 // post runs f from the message loop, outside the WebView2 event that is
 // being handled.
@@ -178,6 +203,8 @@ func RunWindow() {
 		}
 	}()
 
+	watchParent()
+
 	var req Request
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&req); err != nil {
 		fail("控制台启动参数无效: %v", err)
@@ -203,6 +230,7 @@ func RunWindow() {
 
 	hwnd := createWindow(req.Title, 1366, 900)
 	mainHwnd = hwnd
+	closeHwnd.Store(hwnd)
 	_, _, _ = procShowWindow.Call(hwnd, swShow)
 	_, _, _ = procUpdateWindow.Call(hwnd)
 
