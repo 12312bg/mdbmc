@@ -170,6 +170,18 @@ function selFor(d: Device): SELEntry[] {
       { id: '0002', time: t - 93600, sensor: 'CPU1 Temp', sensorType: 'Temperature', message: 'Upper Non-critical going high', severity: 'warning', direction: 'assert', source: 'ipmi' },
       { id: '0001', time: t - 259200, sensor: 'Power Unit', sensorType: 'Power Unit', message: 'Power Off / Power Down', severity: 'info', direction: 'assert', source: 'ipmi' },
     ]
+    // Older history, so that the log spans several pages.
+    const old: [string, string, string, SELEntry['severity']][] = [
+      ['P2-DIMMB1', 'Memory', 'Correctable ECC', 'warning'],
+      ['CPU2 Temp', 'Temperature', 'Upper Non-critical going high', 'warning'],
+      ['Power Unit', 'Power Unit', 'Power Off / Power Down', 'info'],
+      ['Power Unit', 'Power Unit', 'Power On', 'info'],
+      ['FAN2', 'Fan', 'Lower Critical going low', 'critical'],
+    ]
+    for (let i = 0; i < 140; i++) {
+      const [sensor, sensorType, msg, severity] = old[i % old.length]
+      rows.push({ id: (0x0100 + i).toString(16).padStart(4, '0'), time: t - 259200 - (i + 1) * 21600, sensor, sensorType, message: msg, severity, direction: 'assert', source: 'ipmi' })
+    }
     selByDevice.set(d.id, rows)
   }
   return selByDevice.get(d.id)!

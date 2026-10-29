@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 export type ThemeMode = 'auto' | 'light' | 'dark'
 
@@ -11,6 +11,22 @@ function load(): ThemeMode {
     /* storage unavailable */
   }
   return 'auto'
+}
+
+// Naive UI animates colour changes on nearly every element (0.3s on each
+// table cell, input, button…), so a theme switch starts hundreds of
+// transitions at once and stutters. Transitions are off while the new
+// colours are applied, and back on two frames later.
+function withoutTransitions(apply: () => void) {
+  const style = document.createElement('style')
+  style.textContent = '*,*::before,*::after{transition:none!important}'
+  document.head.appendChild(style)
+  apply()
+  nextTick(() => {
+    // Components have re-rendered with the new theme: apply its colours now.
+    void window.getComputedStyle(document.body).color
+    requestAnimationFrame(() => requestAnimationFrame(() => style.remove()))
+  })
 }
 
 export const useTheme = defineStore('theme', () => {
@@ -28,7 +44,7 @@ export const useTheme = defineStore('theme', () => {
       /* ignore */
     }
   })
-  watch(dark, (d) => document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light'), { immediate: true })
+  watch(dark, (d) => withoutTransitions(() => document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light')), { immediate: true })
 
   function cycle() {
     mode.value = mode.value === 'auto' ? 'light' : mode.value === 'light' ? 'dark' : 'auto'

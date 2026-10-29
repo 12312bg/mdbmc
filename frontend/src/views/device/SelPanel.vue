@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
-import { NButton, NIcon, NDataTable, NAlert, NInput, NSelect, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { NButton, NIcon, NDataTable, NAlert, NInput, NSelect, NTag, useDialog, useMessage, type DataTableColumns, type PaginationProps } from 'naive-ui'
 import { RefreshOutline, SearchOutline, TrashOutline, CheckmarkCircle, Warning, CloseCircle, InformationCircleOutline } from '@vicons/ionicons5'
 import { api, errMsg, type SELEntry, type SELResult } from '@/api'
 import { useSession } from '@/stores/session'
@@ -37,6 +37,40 @@ const rows = computed(() => {
     return !kw || [e.sensor, e.sensorType, e.message].some((x) => x.toLowerCase().includes(kw))
   })
 })
+
+// Logs run to thousands of entries; show them a page at a time. The page
+// size is remembered in this browser profile.
+const pageSizeKey = 'mdbmc.sel.pageSize'
+function savedPageSize(): number {
+  try {
+    const n = Number(localStorage.getItem(pageSizeKey))
+    if ([20, 50, 100, 200].includes(n)) return n
+  } catch {
+    /* storage unavailable */
+  }
+  return 50
+}
+const pagination = reactive<PaginationProps>({
+  page: 1,
+  pageSize: savedPageSize(),
+  pageSizes: [20, 50, 100, 200],
+  showSizePicker: true,
+  showQuickJumper: true,
+  prefix: ({ itemCount }) => `共 ${itemCount} 条`,
+  onUpdatePage: (p: number) => {
+    pagination.page = p
+  },
+  onUpdatePageSize: (s: number) => {
+    pagination.pageSize = s
+    pagination.page = 1
+    try {
+      localStorage.setItem(pageSizeKey, String(s))
+    } catch {
+      /* ignore */
+    }
+  },
+})
+watch([keyword, severity, result], () => (pagination.page = 1))
 
 const sev: Record<string, { icon: any; color: string; label: string }> = {
   critical: { icon: CloseCircle, color: 'var(--status-critical)', label: '严重' },
@@ -106,7 +140,16 @@ function clearLog() {
       </div>
     </div>
     <n-alert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</n-alert>
-    <n-data-table :columns="columns" :data="rows" :loading="loading" size="small" :bordered="false" :max-height="560" :scroll-x="1000" />
+    <n-data-table
+      :columns="columns"
+      :data="rows"
+      :loading="loading"
+      :pagination="pagination"
+      size="small"
+      :bordered="false"
+      :max-height="560"
+      :scroll-x="1000"
+    />
   </div>
 </template>
 
