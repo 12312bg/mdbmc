@@ -71,8 +71,10 @@
 | 品牌 | 状态 |
 | --- | --- |
 | Supermicro | 通用 IPMI / Redfish 能力全部可用。KVM 优先通过 Redfish OEM `Managers/1/Oem/Supermicro/IKVM` 获取一次性地址直接打开；旧固件回退为自动登录后跳转到经典 HTML5 iKVM 页面 |
-| Dell / HPE / Lenovo / 华为 / 浪潮 / 新华三 | 自动识别品牌，通用 IPMI / Redfish 能力可用。KVM 暂时打开 Web 管理页并自动登录，在页面里手动启动控制台 |
+| Dell / HPE / Lenovo / 华为（超聚变）/ 浪潮 / 新华三 / 中科曙光 / 宁畅 / Fujitsu / Cisco / Intel / ASUS / Gigabyte / ASRock Rack / QCT / Tyan / IBM | 自动识别品牌，通用 IPMI / Redfish 能力可用。KVM 暂时打开 Web 管理页并自动登录，在页面里手动启动控制台 |
 | 其他支持 IPMI 2.0 或 Redfish 的 BMC | 按“通用”处理 |
+
+品牌按 BMC 报告的厂商名称（IPMI / Redfish / FRU）识别，识别不到时再按 IPMI 厂商编号（IANA 企业编号，含各品牌子公司和更名后的编号，例如浪潮信息的 IEIT SYSTEMS）识别。界面中的品牌标志来自 [Simple Icons](https://simpleicons.org)（CC0），其中没有的品牌显示为文字标志；各标志的商标权归其所有者。
 
 Java 版 KVM（老旧机型）暂不支持。
 

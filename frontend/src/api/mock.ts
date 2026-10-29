@@ -45,7 +45,9 @@ const creds: Credential[] = [
 ]
 
 const vendorNames: Record<string, string> = {
-  supermicro: 'Supermicro', dell: 'Dell', hpe: 'HPE', lenovo: 'Lenovo', huawei: '华为 / 超聚变', inspur: '浪潮', h3c: '新华三', generic: '通用',
+  supermicro: 'Supermicro', dell: 'Dell', hpe: 'HPE', lenovo: 'Lenovo', huawei: '华为 / 超聚变', inspur: '浪潮', h3c: '新华三',
+  fujitsu: 'Fujitsu', cisco: 'Cisco', intel: 'Intel', asus: 'ASUS', gigabyte: 'Gigabyte', asrock: 'ASRock Rack', quanta: 'QCT',
+  sugon: '中科曙光', nettrix: '宁畅', tyan: 'Tyan', ibm: 'IBM', generic: '通用',
 }
 
 type Seed = [string, string, string, string, number, number, Device['powerState'], Device['health'], boolean]
@@ -64,6 +66,12 @@ const seeds: Seed[] = [
   ['lenovo-bk01', '10.10.4.11', 'lenovo', 'ThinkSystem SR650 V2', 3, 0, 'on', 'ok', true],
   ['hw-test01', '10.10.5.11', 'huawei', 'FusionServer 2288H V6', 3, 0, 'off', 'ok', true],
   ['inspur-test01', '10.10.5.21', 'inspur', 'NF5280M6', 3, 0, 'on', 'warning', true],
+  ['h3c-test01', '10.10.5.31', 'h3c', 'UniServer R4900 G5', 3, 0, 'on', 'ok', true],
+  ['sugon-test01', '10.10.5.41', 'sugon', 'I620-G30', 3, 0, 'on', 'ok', true],
+  ['lab-fj01', '10.10.6.11', 'fujitsu', 'PRIMERGY RX2540 M5', 3, 0, 'off', 'ok', true],
+  ['lab-ucs01', '10.10.6.12', 'cisco', 'UCSC-C220-M5SX', 3, 0, 'on', 'ok', true],
+  ['lab-gb01', '10.10.6.13', 'gigabyte', 'R282-Z90', 3, 0, 'on', 'ok', true],
+  ['lab-old01', '10.10.6.14', 'generic', 'S2600WT', 3, 0, 'on', 'ok', true],
 ]
 
 let nextDeviceId = 1
