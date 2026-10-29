@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -380,6 +381,16 @@ func (c *Client) KVMLaunch(ctx context.Context) (*LaunchSpec, error) {
 	switch c.t.Vendor {
 	case VendorSupermicro:
 		return c.supermicroKVM(ctx, base)
+	case VendorInspur:
+		// AMI MegaRAC firmware with the Java console (JViewer): after the
+		// login the window opens its JNLP, which the console window runs
+		// with the bundled Java runtime.
+		return &LaunchSpec{
+			URL:           base + "/",
+			AutoLogin:     true,
+			AfterLoginURL: base + "/Java/jviewer.jnlp?EXTRNIP=" + url.QueryEscape(c.t.Host) + "&JNLPSTR=JViewer",
+			Hint:          "登录 BMC 后会自动启动 Java 远程控制台，首次启动需要从 BMC 下载程序",
+		}, nil
 	}
 	return &LaunchSpec{
 		URL:       base + "/",

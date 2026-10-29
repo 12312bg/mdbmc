@@ -7,10 +7,12 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -50,6 +52,17 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		logins <- r.FormValue("name") + ":" + r.FormValue("pwd")
 		fmt.Fprint(w, `<html><body style="background:`+pageColor+`">welcome</body></html>`)
 	})
+	// A Java console like AMI's JViewer: the jar is built by the Java subtest.
+	var probeJar []byte
+	var probeOut string
+	mux.HandleFunc("GET /Java/jviewer.jnlp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-java-jnlp-file")
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><jnlp codebase="https://%s/Java"><information><title>JViewer</title></information>
+<resources><jar href="release/probe.jar"/><property name="probe.out" value="%s"/></resources>
+<application-desc><argument>-hostname</argument><argument>%s</argument><argument>-kvmtoken</argument><argument>t0ken</argument></application-desc></jnlp>`,
+			r.Host, html.EscapeString(probeOut), html.EscapeString(r.URL.Query().Get("EXTRNIP")))
+	})
+	mux.HandleFunc("GET /Java/release/probe.jar", func(w http.ResponseWriter, _ *http.Request) { w.Write(probeJar) })
 	srv := httptest.NewUnstartedServer(mux)
 	srv.TLS = &tls.Config{
 		MinVersion:   tls.VersionTLS10,
@@ -61,12 +74,12 @@ func TestConsoleWindowSmoke(t *testing.T) {
 	sum := sha256.Sum256(srv.Certificate().Raw)
 	pinned := hex.EncodeToString(sum[:])
 
-	open := func(t *testing.T, fingerprint string) (*windowProc, chan string) {
+	openAt := func(t *testing.T, fingerprint, path string) (*windowProc, chan string) {
 		t.Helper()
 		events := make(chan string, 256)
 		p, err := startWindow(Request{
 			Title:           "MDBMC smoke test",
-			Spec:            bmc.LaunchSpec{URL: srv.URL + "/", AutoLogin: true, Username: "ADMIN", Password: `p"w&1`},
+			Spec:            bmc.LaunchSpec{URL: srv.URL + path, AutoLogin: true, Username: "ADMIN", Password: `p"w&1`},
 			Profile:         t.TempDir(),
 			CertFingerprint: fingerprint,
 		}, 60*time.Second, func(ev string) {
@@ -80,6 +93,11 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		}
 		t.Cleanup(p.kill)
 		return p, events
+	}
+
+	open := func(t *testing.T, fingerprint string) (*windowProc, chan string) {
+		t.Helper()
+		return openAt(t, fingerprint, "/")
 	}
 
 	t.Run("legacy TLS BMC through the proxy, auto-login", func(t *testing.T) {
@@ -148,6 +166,62 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		}
 	})
 
+	t.Run("Java console from a JNLP, closed with its window", func(t *testing.T) {
+		jdk := os.Getenv("JAVA_HOME_8_X64")
+		if os.Getenv(javaHomeEnv) == "" || jdk == "" {
+			t.Skip("needs the bundled Java runtime (" + javaHomeEnv + ") and a JDK 8 (JAVA_HOME_8_X64) for the probe")
+		}
+		dir := t.TempDir()
+		src := filepath.Join(dir, "Probe.java")
+		if err := os.WriteFile(src, []byte(probeSource), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(filepath.Join(jdk, "bin", "javac.exe"), "-d", dir, src).CombinedOutput(); err != nil {
+			t.Fatalf("javac: %v\n%s", err, out)
+		}
+		class, err := os.ReadFile(filepath.Join(dir, "Probe.class"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		probeJar = makeJar(t, "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\r\nMain-Class: Probe\r\n", "Probe.class", string(class))
+		probeOut = filepath.Join(dir, "probe.out")
+
+		p, events := openAt(t, pinned, "/Java/jviewer.jnlp?EXTRNIP=127.0.0.1&JNLPSTR=JViewer")
+		var lines []string
+		for deadline := time.Now().Add(90 * time.Second); lines == nil; {
+			select {
+			case ev := <-events:
+				t.Logf("event: %s", ev)
+			case <-p.done:
+				t.Fatal("window process exited")
+			case <-time.After(300 * time.Millisecond):
+			}
+			if b, err := os.ReadFile(probeOut); err == nil {
+				lines = strings.Split(strings.TrimSpace(strings.ReplaceAll(string(b), "\r", "")), "\n")
+			} else if time.Now().After(deadline) {
+				t.Fatal("the Java console did not start within 90s")
+			}
+		}
+		t.Logf("probe: %q", lines)
+		if got := strings.Join(lines[1:], " "); got != "-hostname 127.0.0.1 -kvmtoken t0ken" {
+			t.Fatalf("Java console got arguments %q", got)
+		}
+		pid, err := strconv.Atoi(strings.Split(lines[0], "@")[0])
+		if err != nil {
+			t.Fatalf("probe output %q", lines)
+		}
+		h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE, false, uint32(pid))
+		if err != nil {
+			t.Fatalf("Java process %d: %v", pid, err)
+		}
+		defer windows.CloseHandle(h)
+		CloseAll()
+		if ev, _ := windows.WaitForSingleObject(h, 15000); ev != windows.WAIT_OBJECT_0 {
+			_ = windows.TerminateProcess(h, 1)
+			t.Fatal("the Java console outlived its window")
+		}
+	})
+
 	t.Run("other certificate is refused", func(t *testing.T) {
 		_, events := open(t, strings.Repeat("00", 32))
 		refused, shown := false, false
@@ -175,6 +249,22 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		}
 	})
 }
+
+// probeSource stands in for a BMC's Java console: it records its process
+// id and arguments, then runs until it is killed.
+const probeSource = `public class Probe {
+  public static void main(String[] args) throws Exception {
+    java.io.File out = new java.io.File(System.getProperty("probe.out"));
+    java.io.File tmp = new java.io.File(out.getPath() + ".tmp");
+    java.io.PrintWriter w = new java.io.PrintWriter(tmp, "UTF-8");
+    w.println(java.lang.management.ManagementFactory.getRuntimeMXBean().getName());
+    for (String a : args) w.println(a);
+    w.close();
+    tmp.renameTo(out);
+    Thread.sleep(600000);
+  }
+}
+`
 
 // parentHelper makes the test binary open a console window, print the
 // window process's PID and exit, like the main program being closed.

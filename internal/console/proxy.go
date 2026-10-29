@@ -1,6 +1,7 @@
 package console
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -10,6 +11,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,8 +43,12 @@ import (
 //
 // The proxy listens on 127.0.0.1 with a random high port: security software
 // tends to inspect or block TLS on well-known ports such as 443, even on
-// loopback. Requests must carry a session cookie that only the window's start URL sets,
-// so other local programs cannot use the proxy.
+// loopback. Requests must carry a session cookie that only the window's
+// start URL sets, so other local programs cannot use the proxy.
+//
+// When the BMC answers with a JNLP file (a Java remote console), the proxy
+// starts it with java (see jnlp.go) instead of handing the download to the
+// browser.
 type proxy struct {
 	target *url.URL // https://bmc[:port]
 	ln     net.Listener
@@ -54,6 +61,8 @@ type proxy struct {
 	// window accepts.
 	certFP string
 	report func(name, detail string)
+	// java starts Java consoles; nil leaves JNLP files to the browser.
+	java *javaLauncher
 
 	mu       sync.Mutex
 	reported map[string]time.Time
@@ -61,6 +70,8 @@ type proxy struct {
 
 const (
 	startPath = "/__mdbmc/start"
+	// javaStatusPath reports the Java console's progress to its status page.
+	javaStatusPath = "/__mdbmc/java"
 	// cookiePrefix marks the proxy's own cookies, which are not forwarded.
 	cookiePrefix = "__Host-mdbmc-"
 )
@@ -234,6 +245,12 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if r.URL.Path == javaStatusPath && p.java != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(p.java.Status())
+		return
+	}
 	if dest := r.Header.Get("Sec-Fetch-Dest"); dest == "document" || dest == "iframe" || dest == "frame" {
 		// Pages (not their resources) are logged to follow what the window does.
 		rec := &statusRecorder{ResponseWriter: w}
@@ -346,6 +363,65 @@ func (p *proxy) modifyResponse(res *http.Response) error {
 			h.Add("Set-Cookie", dropCookieDomain(c))
 		}
 	}
+	if p.java != nil && res.StatusCode == http.StatusOK && looksLikeJNLP(h.Get("Content-Type"), res.Request.URL.Path) {
+		return p.startJava(res)
+	}
+	return nil
+}
+
+// startJava starts the Java console described by a JNLP response and
+// replaces the download with a status page (or nothing, when the page
+// fetched the JNLP from a script).
+func (p *proxy) startJava(res *http.Response) error {
+	body := res.Body
+	defer body.Close()
+	var r io.Reader = io.LimitReader(body, 1<<20)
+	if strings.EqualFold(res.Header.Get("Content-Encoding"), "gzip") {
+		gz, err := gzip.NewReader(r)
+		if err != nil {
+			return err
+		}
+		r = gz
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	plan, err := parseJNLP(data, res.Request.URL, platformFor(runtime.GOOS, runtime.GOARCH))
+	if err == nil {
+		err = plan.mapToBMC(p.host, p.target)
+	}
+	pg := page{
+		Tone:    "java",
+		Title:   "正在启动 Java 远程控制台",
+		Message: "远程控制台会在单独的 Java 窗口中打开。首次打开要从 BMC 下载程序，可能需要十几秒到一分钟。关闭本窗口会同时关闭 Java 远程控制台。",
+		Target:  p.target.Host,
+	}
+	if err != nil {
+		p.java.setStatus("failed", err.Error())
+		pg = page{Tone: "error", Title: "无法启动 Java 远程控制台", Message: err.Error(), Target: p.target.Host}
+	} else {
+		cookie := res.Request.Header.Get("Cookie")
+		p.java.setStatus("preparing", "")
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), launchTimeout)
+			defer cancel()
+			p.java.Launch(ctx, plan, cookie)
+		}()
+	}
+	h := http.Header{"Cache-Control": {"no-store"}}
+	if c := res.Header.Values("Set-Cookie"); len(c) > 0 {
+		h["Set-Cookie"] = c
+	}
+	res.Header = h
+	if dest := res.Request.Header.Get("Sec-Fetch-Dest"); dest != "document" && dest != "iframe" && dest != "frame" {
+		res.StatusCode, res.Status = http.StatusNoContent, "204 No Content"
+		res.Body, res.ContentLength = http.NoBody, 0
+		return nil
+	}
+	html := pg.render()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	res.Body, res.ContentLength = io.NopCloser(strings.NewReader(html)), int64(len(html))
 	return nil
 }
 

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -236,6 +238,11 @@ func RunWindow() {
 	if req.Profile != "" {
 		_ = os.MkdirAll(req.Profile, 0o700)
 	}
+	javaDir := filepath.Join(req.Profile, "java")
+	if req.Profile == "" {
+		javaDir = filepath.Join(os.TempDir(), "mdbmc-java")
+	}
+	px.java = newJavaLauncher(javaDir, &http.Client{Transport: px.rp.Transport}, reportEvent)
 	nav = navState{start: px.startURL(req.Spec.URL), target: px.target.Host}
 	reportEvent("proxy", px.origin()+" -> "+px.target.String())
 

@@ -219,6 +219,20 @@ func TestKVMLaunchSupermicro(t *testing.T) {
 	}
 }
 
+// Inspur's Java console: log in through the web UI, then open its JNLP.
+func TestKVMLaunchInspur(t *testing.T) {
+	c := bmc.New(bmc.Target{Host: "10.0.0.7", Vendor: bmc.VendorInspur})
+	defer c.Close()
+	spec, err := c.KVMLaunch(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.AutoLogin || spec.URL != "https://10.0.0.7/" ||
+		spec.AfterLoginURL != "https://10.0.0.7/Java/jviewer.jnlp?EXTRNIP=10.0.0.7&JNLPSTR=JViewer" {
+		t.Fatalf("spec = %+v", spec)
+	}
+}
+
 func TestScanFindsSimulator(t *testing.T) {
 	sim := startSim(t, bmcsim.Options{})
 	var found []bmc.ScanResult

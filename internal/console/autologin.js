@@ -111,29 +111,47 @@
     }
     submit(cur || pw);
     report('submitted', location.pathname);
-    afterLogin();
+    waitLoggedIn(true);
   }
-  function afterLogin() {
-    // Single-page UIs log in without a reload: wait for the form to go away.
+  // goAfter opens the page to show after the login (e.g. the KVM), once.
+  function goAfter(why) {
+    if (!cfg.after || get() === 'redirected') return;
+    set('redirected');
+    report('autologin', why + ', opening ' + cfg.after.replace(/^[a-z]+:\/\/[^\/]+/i, '').split('?')[0]);
+    location.href = cfg.after;
+  }
+  // waitLoggedIn waits for the login form to go away (single-page UIs log
+  // in without a reload), then goes on to "after". It keeps waiting after
+  // a failed automatic login, so that logging in by hand still gets there.
+  function waitLoggedIn(submitted) {
     var tries = 0;
     var t = setInterval(function () {
       tries++;
       if (!passwordField()) {
         clearInterval(t);
-        if (cfg.after && get() !== 'redirected') { set('redirected'); location.href = cfg.after; }
-      } else if (tries > 60) {
-        // Login failed or needs a manual step; leave the page to the user.
-        clearInterval(t);
+        goAfter('signed in');
+      } else if (tries === 60 && submitted) {
         report('autologin', 'still on the login page 30s after submitting (wrong password, captcha or unsupported form?)');
+        if (!cfg.after) clearInterval(t);
+      } else if (tries > 1200) {
+        clearInterval(t);
       }
     }, 500);
+  }
+  // waitForForm waits for a login form that this script does not fill in.
+  function waitForForm(n) {
+    if (passwordField()) waitLoggedIn(false);
+    else if (n < 1200) setTimeout(function () { waitForForm(n + 1); }, 500);
   }
   function attempt(n) {
     var state = get();
     if (state === 'redirected') return;
-    if (state === 'submitted') { afterLogin(); return; }
+    if (state === 'submitted') { waitLoggedIn(false); return; }
     var pw = passwordField();
     if (!pw) {
+      // No login form once the page has settled: the BMC still has a
+      // session for this window's profile.
+      if (cfg.after && n >= 20 && document.readyState === 'complete') { goAfter('no login form, already signed in'); return; }
       if (n < 60) setTimeout(function () { attempt(n + 1); }, 500);
       else report('autologin', 'no visible password field after 30s; ' + inventory());
       return;
@@ -154,7 +172,11 @@
     // The proxy's own error pages carry this marker; there is nothing to log in to.
     if (document.querySelector('meta[name="mdbmc-status"]')) { report('status-page', location.pathname); return; }
     report('loaded', location.pathname);
-    if (!cfg.autologin) { report('autologin', 'off for this account'); return; }
+    if (!cfg.autologin) {
+      report('autologin', 'off for this account');
+      if (cfg.after) waitForForm(0);
+      return;
+    }
     attempt(0);
   }
   var run = window.top === window ? start : startFrame;
