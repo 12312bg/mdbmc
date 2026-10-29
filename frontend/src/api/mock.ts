@@ -45,7 +45,9 @@ const creds: Credential[] = [
 ]
 
 const vendorNames: Record<string, string> = {
-  supermicro: 'Supermicro', dell: 'Dell', hpe: 'HPE', lenovo: 'Lenovo', huawei: '华为 / 超聚变', inspur: '浪潮', h3c: '新华三', generic: '通用',
+  supermicro: 'Supermicro', dell: 'Dell', hpe: 'HPE', lenovo: 'Lenovo', huawei: '华为 / 超聚变', inspur: '浪潮', h3c: '新华三',
+  fujitsu: 'Fujitsu', cisco: 'Cisco', intel: 'Intel', asus: 'ASUS', gigabyte: 'Gigabyte', asrock: 'ASRock Rack', quanta: 'QCT',
+  sugon: '中科曙光', nettrix: '宁畅', tyan: 'Tyan', ibm: 'IBM', generic: '通用',
 }
 
 type Seed = [string, string, string, string, number, number, Device['powerState'], Device['health'], boolean]
@@ -64,6 +66,12 @@ const seeds: Seed[] = [
   ['lenovo-bk01', '10.10.4.11', 'lenovo', 'ThinkSystem SR650 V2', 3, 0, 'on', 'ok', true],
   ['hw-test01', '10.10.5.11', 'huawei', 'FusionServer 2288H V6', 3, 0, 'off', 'ok', true],
   ['inspur-test01', '10.10.5.21', 'inspur', 'NF5280M6', 3, 0, 'on', 'warning', true],
+  ['h3c-test01', '10.10.5.31', 'h3c', 'UniServer R4900 G5', 3, 0, 'on', 'ok', true],
+  ['sugon-test01', '10.10.5.41', 'sugon', 'I620-G30', 3, 0, 'on', 'ok', true],
+  ['lab-fj01', '10.10.6.11', 'fujitsu', 'PRIMERGY RX2540 M5', 3, 0, 'off', 'ok', true],
+  ['lab-ucs01', '10.10.6.12', 'cisco', 'UCSC-C220-M5SX', 3, 0, 'on', 'ok', true],
+  ['lab-gb01', '10.10.6.13', 'gigabyte', 'R282-Z90', 3, 0, 'on', 'ok', true],
+  ['lab-old01', '10.10.6.14', 'generic', 'S2600WT', 3, 0, 'on', 'ok', true],
 ]
 
 let nextDeviceId = 1
@@ -162,6 +170,18 @@ function selFor(d: Device): SELEntry[] {
       { id: '0002', time: t - 93600, sensor: 'CPU1 Temp', sensorType: 'Temperature', message: 'Upper Non-critical going high', severity: 'warning', direction: 'assert', source: 'ipmi' },
       { id: '0001', time: t - 259200, sensor: 'Power Unit', sensorType: 'Power Unit', message: 'Power Off / Power Down', severity: 'info', direction: 'assert', source: 'ipmi' },
     ]
+    // Older history, so that the log spans several pages.
+    const old: [string, string, string, SELEntry['severity']][] = [
+      ['P2-DIMMB1', 'Memory', 'Correctable ECC', 'warning'],
+      ['CPU2 Temp', 'Temperature', 'Upper Non-critical going high', 'warning'],
+      ['Power Unit', 'Power Unit', 'Power Off / Power Down', 'info'],
+      ['Power Unit', 'Power Unit', 'Power On', 'info'],
+      ['FAN2', 'Fan', 'Lower Critical going low', 'critical'],
+    ]
+    for (let i = 0; i < 140; i++) {
+      const [sensor, sensorType, msg, severity] = old[i % old.length]
+      rows.push({ id: (0x0100 + i).toString(16).padStart(4, '0'), time: t - 259200 - (i + 1) * 21600, sensor, sensorType, message: msg, severity, direction: 'assert', source: 'ipmi' })
+    }
     selByDevice.set(d.id, rows)
   }
   return selByDevice.get(d.id)!
@@ -179,8 +199,21 @@ function inventoryFor(d: Device): Inventory {
     powerSupplies: [1, 2].map((n) => ({ name: 'PS' + n, model: 'PWS-1K02A-1R', serial: `P1K02AL0${d.id}${n}`, capacityWatts: 1000, firmware: '1.2', health: n === 2 && d.health === 'critical' ? 'critical' : 'ok' })),
     firmware: [{ name: 'BMC Firmware', version: d.bmcFirmware, updateable: true }, { name: 'BIOS Firmware', version: d.biosVersion, updateable: true }],
     fru: [{ device: 'Builtin FRU Device (ID 0)', chassisPart: 'CSE-819UTS-R1K02P-T', chassisSerial: 'C8190' + d.serial, boardMfg: d.manufacturer, boardProduct: 'X12DPU-6', boardSerial: 'WM23AS' + d.id, boardPart: 'X12DPU-6', productMfg: d.manufacturer, productName: d.model, productPart: d.model, productVersion: '0123456789', productSerial: d.serial }],
-    source: 'redfish', collectedAt: now(), warnings: null,
+    source: 'redfish', collectedAt: now(),
+    ...mockInventoryErrors(d),
   }
+}
+
+// Some preview devices show how unreadable sections look.
+function mockInventoryErrors(d: Device): Partial<Inventory> {
+  if (d.vendor === 'inspur') {
+    return {
+      powerSupplies: [], firmware: [],
+      errors: { powerSupplies: 'Redfish 读取电源失败: HTTP 404 Not Found', firmware: 'Redfish 读取固件清单失败: HTTP 404 Not Found' },
+    }
+  }
+  if (d.vendor === 'huawei') return { errors: { drives: 'Redfish 读取磁盘失败: RAID 控制器 RAIDStorage1 响应超时', manager: 'Redfish 读取BMC 信息失败: HTTP 500' } }
+  return {}
 }
 const inventoryCache = new Map<number, { inv: Inventory; ts: number }>()
 

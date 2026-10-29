@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -357,6 +358,35 @@ func (s *DeviceService) DeleteGroup(id int64) error {
 	err = s.a.store.DeleteGroup(s.a.bg(), id)
 	s.a.audit(sess, "group.delete", fmt.Sprintf("ID %d", id), err, "")
 	return err
+}
+
+// vendorRulesKey records the bmc.VendorRulesVersion devices were last
+// identified with.
+const vendorRulesKey = "vendor_rules_version"
+
+// reidentifyUnrecognized identifies again, once after vendor detection has
+// changed, the devices recorded with no recognised brand.
+func (a *App) reidentifyUnrecognized(sess *auth.Session) {
+	ctx := a.bg()
+	kv, err := a.store.Settings(ctx)
+	version := strconv.Itoa(bmc.VendorRulesVersion)
+	if err != nil || kv[vendorRulesKey] == version {
+		return
+	}
+	devs, err := a.store.ListDevices(ctx)
+	if err != nil {
+		return
+	}
+	var ids []int64
+	for _, d := range devs {
+		if d.Vendor == "" || d.Vendor == bmc.VendorGeneric {
+			ids = append(ids, d.ID)
+		}
+	}
+	if err := a.store.SaveSettings(ctx, map[string]string{vendorRulesKey: version}); err != nil {
+		return
+	}
+	a.identify(sess, ids)
 }
 
 // identify runs Identify for several devices in the background.

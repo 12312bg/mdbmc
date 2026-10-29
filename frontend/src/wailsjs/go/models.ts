@@ -993,7 +993,7 @@ export namespace bmc {
 	    fru: FRUInfo[];
 	    source: string;
 	    collectedAt: number;
-	    warnings: string[];
+	    errors?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Inventory(source);
@@ -1012,7 +1012,7 @@ export namespace bmc {
 	        this.fru = this.convertValues(source["fru"], FRUInfo);
 	        this.source = source["source"];
 	        this.collectedAt = source["collectedAt"];
-	        this.warnings = source["warnings"];
+	        this.errors = source["errors"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

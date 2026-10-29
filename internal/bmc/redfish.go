@@ -238,6 +238,7 @@ func (r *rfConn) identity(id *Identity) []string {
 		}
 	}
 	names := append([]string{id.Manufacturer, r.svc.Vendor, r.svc.Product}, oemKeys...)
+	names = append(names, id.fruNames...)
 	id.Vendor = DetectVendor(id.ManufacturerID, names...)
 	return warns
 }
@@ -469,12 +470,15 @@ func intVal(p *int) int {
 }
 
 func (r *rfConn) inventory(inv *Inventory) {
-	warn := func(what string, err error) {
-		inv.Warnings = append(inv.Warnings, fmt.Sprintf("%s: %v", what, err))
+	warn := func(section, what string, err error) {
+		inv.fail(section, fmt.Sprintf("读取%s失败: %v", what, err))
 	}
 	sys, err := r.firstSystem()
 	if err != nil {
-		warn("系统信息", err)
+		// Processors, memory, drives and NICs hang off the system.
+		for _, sec := range []string{"system", "processors", "memory", "drives", "nics"} {
+			warn(sec, "系统信息", err)
+		}
 	} else {
 		inv.System = SystemInfo{
 			Manufacturer: sys.Manufacturer, Model: sys.Model, Serial: sys.SerialNumber, SKU: sys.SKU,
@@ -498,7 +502,7 @@ func (r *rfConn) inventory(inv *Inventory) {
 				})
 			}
 		} else {
-			warn("处理器", err)
+			warn("processors", "处理器", err)
 		}
 		if mems, err := sys.Memory(); err == nil {
 			for _, m := range mems {
@@ -512,13 +516,13 @@ func (r *rfConn) inventory(inv *Inventory) {
 				})
 			}
 		} else {
-			warn("内存", err)
+			warn("memory", "内存", err)
 		}
 		if storages, err := sys.Storage(); err == nil {
 			for _, st := range storages {
 				drives, err := st.Drives()
 				if err != nil {
-					warn("磁盘", err)
+					warn("drives", "磁盘", err)
 					continue
 				}
 				for _, d := range drives {
@@ -533,7 +537,7 @@ func (r *rfConn) inventory(inv *Inventory) {
 				}
 			}
 		} else {
-			warn("存储", err)
+			warn("drives", "存储控制器", err)
 		}
 		if nics, err := sys.EthernetInterfaces(); err == nil {
 			for _, n := range nics {
@@ -549,7 +553,7 @@ func (r *rfConn) inventory(inv *Inventory) {
 				inv.NICs = append(inv.NICs, nic)
 			}
 		} else {
-			warn("网卡", err)
+			warn("nics", "网卡", err)
 		}
 	}
 
@@ -569,13 +573,16 @@ func (r *rfConn) inventory(inv *Inventory) {
 			}
 		}
 	} else {
-		warn("BMC 信息", err)
+		warn("manager", "BMC 信息", err)
 	}
 
+	var psuErr error
 	if chassis, err := r.svc.Chassis(); err == nil {
 		for _, ch := range chassis {
 			pw, err := ch.Power()
 			if err != nil || pw == nil {
+				// Some chassis (enclosures, backplanes) have no power data.
+				psuErr = err
 				continue
 			}
 			for _, ps := range pw.PowerSupplies {
@@ -592,10 +599,17 @@ func (r *rfConn) inventory(inv *Inventory) {
 				inv.PowerSupplies = append(inv.PowerSupplies, p)
 			}
 		}
+	} else {
+		psuErr = err
+	}
+	if len(inv.PowerSupplies) == 0 && psuErr != nil {
+		warn("powerSupplies", "电源", psuErr)
 	}
 
-	if us, err := r.svc.UpdateService(); err == nil && us != nil {
-		if fws, err := us.FirmwareInventory(); err == nil {
+	us, err := r.svc.UpdateService()
+	if err == nil && us != nil {
+		var fws []*schemas.SoftwareInventory
+		if fws, err = us.FirmwareInventory(); err == nil {
 			for _, fw := range fws {
 				if fw.Version == "" {
 					continue
@@ -603,6 +617,9 @@ func (r *rfConn) inventory(inv *Inventory) {
 				inv.Firmware = append(inv.Firmware, Firmware{Name: firstNonEmpty(fw.Name, fw.ID), Version: fw.Version, Updateable: fw.Updateable})
 			}
 		}
+	}
+	if len(inv.Firmware) == 0 && err != nil {
+		warn("firmware", "固件清单", err)
 	}
 }
 

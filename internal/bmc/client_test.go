@@ -173,6 +173,29 @@ func TestInventory(t *testing.T) {
 	if len(inv.FRU) == 0 || inv.FRU[0].BoardProduct != "X12DPU-6" {
 		t.Fatalf("fru = %+v", inv.FRU)
 	}
+	if len(inv.Errors) != 0 {
+		t.Fatalf("errors = %v", inv.Errors)
+	}
+}
+
+// Errors belong to the sections they affect: without Redfish, the Redfish
+// sections say why they are empty and the IPMI FRU is still there.
+func TestInventoryErrorsPerSection(t *testing.T) {
+	sim := startSim(t, bmcsim.Options{DisableRedfish: true})
+	c := bmc.New(target(sim, bmc.ProtocolAuto))
+	defer c.Close()
+	inv, err := c.Inventory(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"system", "manager", "processors", "memory", "drives", "nics", "powerSupplies", "firmware"} {
+		if !strings.Contains(inv.Errors[s], "Redfish") {
+			t.Errorf("section %s: error %q", s, inv.Errors[s])
+		}
+	}
+	if inv.Errors["fru"] != "" || len(inv.FRU) == 0 || inv.Source != bmc.ProtocolIPMI {
+		t.Fatalf("fru %v, error %q, source %s", inv.FRU, inv.Errors["fru"], inv.Source)
+	}
 }
 
 func TestAuthFailureAndPinning(t *testing.T) {
@@ -215,6 +238,20 @@ func TestKVMLaunchSupermicro(t *testing.T) {
 		t.Fatal(err)
 	}
 	if spec.AutoLogin || !strings.Contains(spec.URL, "man_ikvm_html5_auto&token=") {
+		t.Fatalf("spec = %+v", spec)
+	}
+}
+
+// Inspur's Java console: log in through the web UI, then open its JNLP.
+func TestKVMLaunchInspur(t *testing.T) {
+	c := bmc.New(bmc.Target{Host: "10.0.0.7", Vendor: bmc.VendorInspur})
+	defer c.Close()
+	spec, err := c.KVMLaunch(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.AutoLogin || spec.URL != "https://10.0.0.7/" ||
+		spec.AfterLoginURL != "https://10.0.0.7/Java/jviewer.jnlp?EXTRNIP=10.0.0.7&JNLPSTR=JViewer" {
 		t.Fatalf("spec = %+v", spec)
 	}
 }
@@ -271,5 +308,19 @@ func TestLegacyTLSBMC(t *testing.T) {
 	var mm *bmc.FingerprintMismatchError
 	if !errors.As(err, &mm) {
 		t.Fatalf("other pin: want FingerprintMismatchError, got %v", err)
+	}
+}
+
+// Over IPMI alone the manufacturer and model come from the baseboard FRU.
+func TestIdentifyIPMIOnlyUsesFRU(t *testing.T) {
+	sim := startSim(t, bmcsim.Options{DisableRedfish: true})
+	c := bmc.New(target(sim, bmc.ProtocolIPMI))
+	defer c.Close()
+	id, err := c.Identify(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.Vendor != bmc.VendorSupermicro || id.Manufacturer != "Supermicro" || id.Model != "SYS-120U-TNR" {
+		t.Fatalf("identity = %+v", id)
 	}
 }

@@ -95,6 +95,7 @@ func (s *AuthService) startSession(ctx context.Context, u *store.User, dek []byt
 	_ = s.a.store.TouchLogin(ctx, u.ID)
 	s.a.audit(sess, "auth.login", u.Username, nil, "")
 	s.a.poller.start()
+	go s.a.reidentifyUnrecognized(sess)
 	return userInfo(u), nil
 }
 

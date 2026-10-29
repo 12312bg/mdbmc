@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/12312bg/mdbmc/internal/auth"
 	"github.com/12312bg/mdbmc/internal/bmcsim"
 	"github.com/12312bg/mdbmc/internal/console"
+	"github.com/12312bg/mdbmc/internal/store"
 	"github.com/12312bg/mdbmc/internal/vault"
 )
 
@@ -325,5 +327,53 @@ func TestLogoutClosesConsolesIdleLockDoesNot(t *testing.T) {
 		if page.Total != want {
 			t.Fatalf("%s audit rows = %d, want %d", action, page.Total, want)
 		}
+	}
+}
+
+// A device recorded without a recognised brand is identified again once
+// after vendor detection changed (on the next login), not on every login.
+func TestReidentifyUnrecognizedAfterRulesChange(t *testing.T) {
+	sim, err := bmcsim.Start(bmcsim.Options{Index: 8})
+	must(t, err)
+	t.Cleanup(sim.Close)
+	h := newHarness(t)
+	_, err = h.authS.Setup("admin", "", "Admin@12345")
+	must(t, err)
+	h.app.poller.stop()
+	dev, err := h.devices.Create(DeviceInput{Name: "old", Host: "127.0.0.1", IPMIPort: sim.IPMIPort, HTTPSPort: sim.HTTPSPort, Username: "ADMIN", Password: "ADMIN"})
+	must(t, err)
+	waitVendor := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			d, err := h.devices.Get(dev.ID)
+			must(t, err)
+			if d.Vendor == want {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("vendor = %q, want %q", d.Vendor, want)
+			}
+		}
+	}
+	waitVendor("supermicro")
+
+	// As if identified by an older version that did not know the brand.
+	ctx := context.Background()
+	must(t, h.app.store.UpdateDeviceIdentity(ctx, dev.ID, store.Identity{Vendor: "generic", HasIPMI: true, HasRedfish: true}))
+	must(t, h.app.store.SaveSettings(ctx, map[string]string{vendorRulesKey: "1"}))
+	h.authS.Logout()
+	_, err = h.authS.Login("admin", "Admin@12345")
+	must(t, err)
+	h.app.poller.stop()
+	waitVendor("supermicro")
+
+	// The same rules again: no second pass.
+	must(t, h.app.store.UpdateDeviceIdentity(ctx, dev.ID, store.Identity{Vendor: "generic", HasIPMI: true, HasRedfish: true}))
+	h.authS.Logout()
+	_, err = h.authS.Login("admin", "Admin@12345")
+	must(t, err)
+	time.Sleep(1500 * time.Millisecond)
+	if d, _ := h.devices.Get(dev.ID); d.Vendor != "generic" {
+		t.Fatalf("identified again without a rules change: %q", d.Vendor)
 	}
 }

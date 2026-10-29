@@ -56,8 +56,24 @@ func TestDetectVendor(t *testing.T) {
 		"xFusion":                        VendorHuawei,
 		"Inspur":                         VendorInspur,
 		"New H3C Technologies Co., Ltd.": VendorH3C,
-		"American Megatrends":            VendorGeneric,
-		"Shpe Corp":                      VendorGeneric,
+		"浪潮电子信息产业股份有限公司": VendorInspur,
+		"IEIT SYSTEMS":                    VendorInspur,
+		"FUJITSU":                         VendorFujitsu,
+		"Cisco Systems Inc":               VendorCisco,
+		"Intel Corporation":               VendorIntel,
+		"ASUSTeK COMPUTER INC.":           VendorASUS,
+		"GIGA-BYTE TECHNOLOGY CO., LTD.":  VendorGigabyte,
+		"Giga Computing":                  VendorGigabyte,
+		"ASRockRack":                      VendorASRock,
+		"Quanta Cloud Technology Inc.":    VendorQuanta,
+		"Sugon":                           VendorSugon,
+		"Dawning Information Industry":    VendorSugon,
+		"Nettrix":                         VendorNettrix,
+		"TYAN Computer":                   VendorTyan,
+		"IBM":                             VendorIBM,
+		"American Megatrends":             VendorGeneric,
+		"Intelligent Platform Management": VendorGeneric,
+		"Shpe Corp":                       VendorGeneric,
 	}
 	for name, want := range cases {
 		if got := DetectVendor(0, name); got != want {
@@ -69,6 +85,12 @@ func TestDetectVendor(t *testing.T) {
 	}
 	if got := DetectVendor(10876, "", "AMI"); got != VendorSupermicro {
 		t.Errorf("IANA fallback = %s", got)
+	}
+	// Inspur's own number and its new name IEIT SYSTEMS; New H3C; xFusion.
+	for iana, want := range map[uint32]string{37945: VendorInspur, 61847: VendorInspur, 61878: VendorH3C, 58132: VendorHuawei, 343: VendorIntel, 20974: VendorGeneric} {
+		if got := DetectVendor(iana, "American Megatrends"); got != want {
+			t.Errorf("IANA %d = %s, want %s", iana, got, want)
+		}
 	}
 }
 

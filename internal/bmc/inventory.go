@@ -13,7 +13,24 @@ type Inventory struct {
 	FRU           []FRUInfo     `json:"fru"`
 	Source        Protocol      `json:"source"`
 	CollectedAt   int64         `json:"collectedAt"`
-	Warnings      []string      `json:"warnings"`
+	// Errors says why a section could not be read (completely or in part),
+	// keyed by section: system, manager, processors, memory, drives, nics,
+	// powerSupplies, firmware, fru.
+	Errors map[string]string `json:"errors,omitempty"`
+}
+
+// Sections read over Redfish.
+var redfishSections = []string{"system", "manager", "processors", "memory", "drives", "nics", "powerSupplies", "firmware"}
+
+// fail records why a section could not be read.
+func (inv *Inventory) fail(section, msg string) {
+	if inv.Errors == nil {
+		inv.Errors = map[string]string{}
+	}
+	if prev := inv.Errors[section]; prev != "" && prev != msg {
+		msg = prev + "；" + msg
+	}
+	inv.Errors[section] = msg
 }
 
 type SystemInfo struct {

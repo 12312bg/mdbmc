@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
-import { NButton, NIcon, NDataTable, NAlert, NRadioGroup, NRadioButton, NSpin, type DataTableColumns } from 'naive-ui'
-import { RefreshOutline, CheckmarkCircle, Warning, CloseCircle, HelpCircle, RemoveCircleOutline } from '@vicons/ionicons5'
+import { NButton, NIcon, NDataTable, NAlert, NRadioGroup, NRadioButton, NSpin, NInput, type DataTableColumns } from 'naive-ui'
+import { RefreshOutline, CheckmarkCircle, Warning, CloseCircle, HelpCircle, RemoveCircleOutline, SearchOutline } from '@vicons/ionicons5'
 import { api, errMsg, type Sensor, type SensorsResult } from '@/api'
 import { formatNumber, relativeTime, sensorCategoryLabel } from '@/utils/format'
 
@@ -11,6 +11,9 @@ const result = ref<SensorsResult | null>(null)
 const loading = ref(false)
 const error = ref('')
 const category = ref<string>('all')
+type Severity = 'critical' | 'warning' | 'ok' | 'other'
+const severity = ref<Severity | 'all'>('all')
+const keyword = ref('')
 
 async function load() {
   loading.value = true
@@ -26,21 +29,25 @@ async function load() {
 onMounted(load)
 
 const sensors = computed(() => result.value?.sensors ?? [])
-const counts = computed(() => {
-  const c = { ok: 0, warning: 0, critical: 0, other: 0 }
-  sensors.value.forEach((s) => {
-    if (s.status === 'ok') c.ok++
-    else if (s.status === 'warning') c.warning++
-    else if (s.status === 'critical') c.critical++
-    else c.other++
-  })
-  return c
-})
+const severityOf = (s: Sensor): Severity => (s.status === 'ok' || s.status === 'warning' || s.status === 'critical' ? s.status : 'other')
 const categories = computed(() => {
   const seen = new Set(sensors.value.map((s) => s.category))
   return ['temperature', 'fan', 'voltage', 'current', 'power', 'other'].filter((c) => seen.has(c as Sensor['category']))
 })
-const rows = computed(() => (category.value === 'all' ? sensors.value : sensors.value.filter((s) => s.category === category.value)))
+// Sensors of the chosen type matching the search; the severity counts are
+// taken from these, the table also filters by severity.
+const scoped = computed(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  return sensors.value.filter((s) =>
+    (category.value === 'all' || s.category === category.value) &&
+    (!kw || [s.name, s.text, sensorCategoryLabel[s.category], statusMeta[s.status]?.label].some((x) => x?.toLowerCase().includes(kw))))
+})
+const counts = computed(() => {
+  const c: Record<Severity, number> = { critical: 0, warning: 0, ok: 0, other: 0 }
+  scoped.value.forEach((s) => c[severityOf(s)]++)
+  return c
+})
+const rows = computed(() => (severity.value === 'all' ? scoped.value : scoped.value.filter((s) => severityOf(s) === severity.value)))
 
 const statusMeta: Record<string, { icon: any; color: string; label: string }> = {
   ok: { icon: CheckmarkCircle, color: 'var(--status-good)', label: '正常' },
@@ -81,6 +88,14 @@ function meter(s: Sensor) {
   ])
 }
 
+const severityChips: { key: Severity; label: string; icon: any; color: string }[] = [
+  { key: 'critical', label: '严重', icon: CloseCircle, color: 'var(--status-critical)' },
+  { key: 'warning', label: '警告', icon: Warning, color: 'var(--status-warning)' },
+  { key: 'ok', label: '正常', icon: CheckmarkCircle, color: 'var(--status-good)' },
+  { key: 'other', label: '无读数 / 不在位', icon: HelpCircle, color: 'var(--status-unknown)' },
+]
+const toggleSeverity = (k: Severity) => (severity.value = severity.value === k ? 'all' : k)
+
 const range = (lo: number | null, hi: number | null) => (lo === null && hi === null ? '—' : `${lo ?? '—'} / ${hi ?? '—'}`)
 
 const columns: DataTableColumns<Sensor> = [
@@ -108,20 +123,37 @@ const columns: DataTableColumns<Sensor> = [
 <template>
   <div>
     <div class="bar">
-      <n-radio-group v-model:value="category" size="small">
-        <n-radio-button value="all">全部 {{ sensors.length }}</n-radio-button>
-        <n-radio-button v-for="c in categories" :key="c" :value="c">{{ sensorCategoryLabel[c] }}</n-radio-button>
-      </n-radio-group>
+      <div class="filters">
+        <n-input v-model:value="keyword" size="small" clearable placeholder="搜索名称、类型或状态" style="width: 220px">
+          <template #prefix><n-icon :component="SearchOutline" /></template>
+        </n-input>
+        <n-radio-group v-model:value="category" size="small">
+          <n-radio-button value="all">全部类型</n-radio-button>
+          <n-radio-button v-for="c in categories" :key="c" :value="c">{{ sensorCategoryLabel[c] }}</n-radio-button>
+        </n-radio-group>
+      </div>
       <div class="summary">
-        <span class="st"><n-icon :component="CheckmarkCircle" color="var(--status-good)" />正常 {{ counts.ok }}</span>
-        <span class="st"><n-icon :component="Warning" color="var(--status-warning)" />警告 {{ counts.warning }}</span>
-        <span class="st"><n-icon :component="CloseCircle" color="var(--status-critical)" />严重 {{ counts.critical }}</span>
         <span v-if="result" class="muted">经 {{ result.via.toUpperCase() }} 读取 · {{ relativeTime(result.fetchedAt) }}</span>
         <n-button size="small" :loading="loading" @click="load">
           <template #icon><n-icon :component="RefreshOutline" /></template>
           刷新
         </n-button>
       </div>
+    </div>
+    <div class="chips" role="group" aria-label="按严重程度筛选">
+      <button type="button" class="chip" :class="{ on: severity === 'all' }" @click="severity = 'all'">全部 {{ scoped.length }}</button>
+      <template v-for="c in severityChips" :key="c.key">
+        <button
+          v-if="c.key !== 'other' || counts.other"
+          type="button"
+          class="chip"
+          :class="{ on: severity === c.key, empty: !counts[c.key] }"
+          :aria-pressed="severity === c.key"
+          @click="toggleSeverity(c.key)"
+        >
+          <n-icon :component="c.icon" :color="c.color" :size="14" />{{ c.label }} {{ counts[c.key] }}
+        </button>
+      </template>
     </div>
     <n-alert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</n-alert>
     <n-spin :show="loading && !!result">
@@ -139,11 +171,48 @@ const columns: DataTableColumns<Sensor> = [
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .summary {
   display: flex;
   align-items: center;
   gap: 16px;
   font-size: 13px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip:hover {
+  border-color: var(--accent);
+}
+.chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+.chip.empty:not(.on) {
+  opacity: 0.55;
 }
 :deep(.st),
 .st {

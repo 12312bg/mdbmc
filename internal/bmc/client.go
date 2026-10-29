@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -149,6 +150,7 @@ func (c *Client) try(ctx context.Context, order []Protocol, ipmiFn func(*ipmiCon
 func (c *Client) Identify(ctx context.Context) (*Identity, error) {
 	id := &Identity{PowerState: PowerUnknown, Health: HealthUnknown}
 	var errs []error
+	var fruProduct string
 
 	if c.t.Protocol != ProtocolRedfish {
 		if ip, err := c.ipmi(ctx); err == nil {
@@ -162,6 +164,9 @@ func (c *Client) Identify(ctx context.Context) (*Identity, error) {
 			}
 			if ps, h, err := ip.status(ctx); err == nil {
 				id.PowerState, id.Health = ps, h
+			}
+			if mfg, product, err := ip.baseboardFRU(ctx); err == nil {
+				id.fruNames, fruProduct = mfg, product
 			}
 		} else {
 			errs = append(errs, friendly(ProtocolIPMI, err))
@@ -195,8 +200,16 @@ func (c *Client) Identify(ctx context.Context) (*Identity, error) {
 	if !id.HasIPMI && !id.HasRedfish {
 		return nil, joinErrors(errs)
 	}
+	for _, m := range id.fruNames {
+		if m = strings.TrimSpace(m); id.Manufacturer == "" && m != "" {
+			id.Manufacturer = m
+		}
+	}
+	if id.Model == "" {
+		id.Model = fruProduct
+	}
 	if id.Vendor == "" {
-		id.Vendor = DetectVendor(id.ManufacturerID, id.Manufacturer)
+		id.Vendor = DetectVendor(id.ManufacturerID, append([]string{id.Manufacturer}, id.fruNames...)...)
 	}
 	id.VendorName = VendorName(id.Vendor)
 	for _, e := range errs {
@@ -343,6 +356,7 @@ func (c *Client) Inventory(ctx context.Context) (*Inventory, error) {
 			errs = append(errs, friendly(ProtocolRedfish, err))
 		}
 	}
+	rfErrs := len(errs)
 	if c.allowed(ProtocolIPMI) {
 		if ip, err := c.ipmi(ctx); err == nil {
 			if fru, err := ip.fru(ctx); err == nil {
@@ -363,8 +377,15 @@ func (c *Client) Inventory(ctx context.Context) (*Inventory, error) {
 		}
 		return nil, ErrNotSupported
 	}
-	for _, e := range errs {
-		inv.Warnings = append(inv.Warnings, e.Error())
+	// The failed protocol's sections say why they are empty.
+	for i, e := range errs {
+		if i < rfErrs {
+			for _, s := range redfishSections {
+				inv.fail(s, e.Error())
+			}
+		} else {
+			inv.fail("fru", e.Error())
+		}
 	}
 	return inv, nil
 }
@@ -380,10 +401,24 @@ func (c *Client) KVMLaunch(ctx context.Context) (*LaunchSpec, error) {
 	switch c.t.Vendor {
 	case VendorSupermicro:
 		return c.supermicroKVM(ctx, base)
+	case VendorInspur:
+		// AMI MegaRAC firmware with the Java console (JViewer): after the
+		// login the window opens its JNLP, which the console window runs
+		// with the bundled Java runtime.
+		return &LaunchSpec{
+			URL:           base + "/",
+			AutoLogin:     true,
+			AfterLoginURL: base + "/Java/jviewer.jnlp?EXTRNIP=" + url.QueryEscape(c.t.Host) + "&JNLPSTR=JViewer",
+			Hint:          "登录 BMC 后会自动启动 Java 远程控制台，首次启动需要从 BMC 下载程序",
+		}, nil
+	}
+	hint := VendorName(c.t.Vendor) + " 的一键 KVM 尚未适配"
+	if c.t.Vendor == "" || c.t.Vendor == VendorGeneric {
+		hint = "未识别出该设备的品牌，可在设备详情中点“重新识别”"
 	}
 	return &LaunchSpec{
 		URL:       base + "/",
 		AutoLogin: true,
-		Hint:      "已打开 BMC Web 界面，请在其中启动远程控制台（该品牌的一键 KVM 尚未适配）",
+		Hint:      "已打开 BMC Web 界面，请在页面中启动远程控制台，Java 版控制台会直接打开（" + hint + "）",
 	}, nil
 }

@@ -15,10 +15,10 @@
 | 设备管理 | 手动添加，或按网段扫描发现（IPMI + Redfish 探测，自动识别品牌）；支持分组、凭据模板、批量移动分组、批量更换凭据 |
 | 电源控制 | 开机、正常关机（ACPI）、强制关机、硬重启、电源循环；支持批量操作，并显示每台设备的执行结果；可控制定位灯 |
 | 状态监控 | 后台定时刷新电源与健康状态（间隔可配置），界面实时更新；总览页汇总各类状态与需要关注的设备 |
-| 传感器 | 温度、风扇、电压、电源等读数，带阈值刻度与告警级别 |
-| 事件日志 | 查看、筛选、清空 SEL |
-| 硬件资产 | 处理器、内存、磁盘、网卡、电源、固件版本、IPMI FRU；采集结果本地缓存 |
-| Web / KVM | 在独立的 WebView2 窗口中打开 BMC 管理页并自动登录；Supermicro 支持一键打开 HTML5 iKVM |
+| 传感器 | 温度、风扇、电压、电源等读数，带阈值刻度与告警级别；可按类型、严重程度筛选并搜索 |
+| 事件日志 | 查看、按级别筛选、搜索、分页（每页条数可选）、清空 SEL |
+| 硬件资产 | 处理器、内存、磁盘、网卡、电源、固件版本、IPMI FRU；采集结果本地缓存；某一项读取失败时，只在该项右上角显示警告标记，悬停查看原因 |
+| Web / KVM | 在独立的 WebView2 窗口中打开 BMC 管理页并自动登录；Supermicro 支持一键打开 HTML5 iKVM；浪潮等使用 Java 远程控制台（JNLP）的 BMC，用随软件安装的 Java 运行环境直接打开，无需本机安装 Java |
 | 账号与审计 | 本地账号登录，固定三种角色；登录、电源、控制台、查看密码、配置变更等操作都写入审计日志 |
 
 ## 角色与权限
@@ -62,6 +62,7 @@
   - 手动退出登录时关闭所有控制台窗口；空闲超时自动锁定时保留已打开的控制台窗口（以免打断用 KVM 安装系统等长时间操作），主界面需重新登录。审计日志分别记为“退出登录”和“空闲锁定”。
   - 自动登录用的密码通过子进程的标准输入传递，不会出现在命令行参数里。
   - 填表脚本只在该 BMC 页面（代理地址）上生效。
+  - Java 远程控制台运行的是 BMC 提供的程序（与以前用 Java Web Start 打开时相同），只从固定证书的 BMC 本身下载。
 - **初始密码**：管理员新建或重置的密码只能用于登录并修改密码，修改前后端拒绝其他所有操作。
 - **登录防爆破**：同一用户名连续 5 次密码错误后，锁定 30 秒。
 - **权限边界**：所有角色登录后都能解开同一把数据密钥（只读用户也需要连接 BMC 读取状态），所以角色限制只在软件内部生效。拿到数据库文件和任一账号密码的人，可以绕过软件直接解密 BMC 密码。
@@ -71,10 +72,22 @@
 | 品牌 | 状态 |
 | --- | --- |
 | Supermicro | 通用 IPMI / Redfish 能力全部可用。KVM 优先通过 Redfish OEM `Managers/1/Oem/Supermicro/IKVM` 获取一次性地址直接打开；旧固件回退为自动登录后跳转到经典 HTML5 iKVM 页面 |
-| Dell / HPE / Lenovo / 华为 / 浪潮 / 新华三 | 自动识别品牌，通用 IPMI / Redfish 能力可用。KVM 暂时打开 Web 管理页并自动登录，在页面里手动启动控制台 |
+| 浪潮 | 通用 IPMI / Redfish 能力可用。KVM：自动登录 Web 后直接启动 Java 远程控制台（AMI JViewer，地址 `/Java/jviewer.jnlp`） |
+| Dell / HPE / Lenovo / 华为（超聚变）/ 新华三 / 中科曙光 / 宁畅 / Fujitsu / Cisco / Intel / ASUS / Gigabyte / ASRock Rack / QCT / Tyan / IBM | 自动识别品牌，通用 IPMI / Redfish 能力可用。KVM 暂时打开 Web 管理页并自动登录，在页面里手动启动控制台；如果是 Java 版控制台，点击后会直接打开（见下方） |
 | 其他支持 IPMI 2.0 或 Redfish 的 BMC | 按“通用”处理 |
 
-Java 版 KVM（老旧机型）暂不支持。
+品牌按 BMC 报告的厂商名称（IPMI / Redfish / FRU）识别，识别不到时再按 IPMI 厂商编号（IANA 企业编号，含各品牌子公司和更名后的编号，例如浪潮信息的 IEIT SYSTEMS）识别。界面中的品牌标志来自 [Simple Icons](https://simpleicons.org)（CC0），其中没有的品牌显示为文字标志；各标志的商标权归其所有者。
+
+### Java 远程控制台
+
+不少 BMC（AMI MegaRAC 固件的浪潮、曙光等，以及较老的 Supermicro、Dell、Lenovo）用 Java Web Start（JNLP 文件）启动远程控制台。现在的 Java 已不再提供 Web Start，很多电脑也没装 Java，所以本软件自己运行这类控制台：
+
+- 控制台窗口的本地代理发现 BMC 返回的是 JNLP 文件时，不交给浏览器下载，而是从 BMC 下载其中的程序包（只接受固定证书的 BMC 本身，其他服务器的程序包一律拒绝），解出 Windows 64 位本地库，用**随软件安装的 Java 8 运行环境**（Eclipse Temurin JRE，位于安装目录的 `jre` 文件夹，只供本软件使用）启动。
+- 窗口显示“正在启动 Java 远程控制台”页面，实时显示下载进度、已打开或失败原因。程序包按 BMC 缓存，之后再打开会更快。
+- Java 控制台随启动它的窗口一起关闭（关闭窗口、退出登录、主程序退出），不会残留进程。
+- 老固件的加密 KVM 只支持 TLS 1.0/1.1，因此仅对控制台的 Java 进程重新允许这些协议，不影响系统里的其他 Java。
+- JNLP 中的会话令牌按 Java 程序的要求作为命令行参数传给 Java 进程；这些令牌只在本次 BMC 会话内有效。
+- Applet 形式的 Java 控制台（如 HP iLO 3/4）暂不支持。
 
 ## 技术栈
 
@@ -84,6 +97,7 @@ Java 版 KVM（老旧机型）暂不支持。
   - [gofish](https://github.com/stmcginnis/gofish)：Redfish
   - [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite)：纯 Go 实现，无需 CGO
   - [go-webview2](https://github.com/wailsapp/go-webview2)：控制台子窗口（自建 Win32 窗口 + WebView2）
+  - [Eclipse Temurin](https://adoptium.net) 8 JRE：随软件安装，用于运行 BMC 的 Java 远程控制台（GPLv2 + Classpath Exception，许可文件随附在 `jre` 文件夹中）
 - **前端**：Vue 3、TypeScript、Vite、[Naive UI](https://www.naiveui.com)、Pinia、Vue Router；支持浅色、深色和跟随系统三种主题
 
 ## 项目结构
@@ -191,15 +205,19 @@ cd frontend && npm run typecheck    # 前端类型检查
 - **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`。
 - **Windows**：
   - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口访问一个只支持 TLS 1.0 的模拟 BMC（WebView2 无法直连），确认页面能经本地代理打开并自动填写、提交登录表单，且 BMC 证书与固定值不一致时拒绝连接。
-  - 再编译 `mdbmc.exe`、NSIS 安装包和 `bmcsim.exe`。
+  - 测试前先下载固定版本的 Temurin 8 JRE 并校验 SHA-256（版本和校验值见工作流中的 `JRE_URL`、`JRE_SHA256`），冒烟测试会用它经 JNLP 启动一个测试用 Java 程序，并确认关闭窗口后 Java 进程随之结束。
+  - 再编译 `mdbmc.exe`、NSIS 安装包（含 Java 运行环境）和 `bmcsim.exe`，并打包免安装版 `mdbmc-portable-windows-amd64.zip`（`mdbmc.exe` 与 `jre` 文件夹）。
 
-编译产物在 Actions 运行页面的 **Artifacts** 中下载。推送 `v*` 标签时，版本号取自标签。
+编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签。
+
+本地开发时，可以用环境变量 `MDBMC_JAVA_HOME` 指定 Java 运行环境目录（其中有 `bin\javaw.exe`），以代替安装目录中的 `jre`。
 
 ## 数据存放位置
 
 - 数据库：`%APPDATA%\mdbmc\mdbmc.db`
 - 日志：`%APPDATA%\mdbmc\mdbmc.log`
 - 控制台窗口的浏览器配置：`%APPDATA%\mdbmc\console\<设备ID>\`
+- Java 远程控制台从 BMC 下载的程序包缓存：`%APPDATA%\mdbmc\console\<设备ID>\java\`
 
 可以通过环境变量 `MDBMC_DATA_DIR` 指定其他目录。
 
@@ -212,5 +230,7 @@ cd frontend && npm run typecheck    # 前端类型检查
   - `proxy-request GET / -> 200 (350 ms)`：代理向 BMC 请求页面的结果；
   - `loaded /`、`submitted /`：页面已加载、已自动提交登录表单；
   - `proxy-error ...`：代理连接 BMC 失败的原因；`proxy-log ...`：BMC 返回内容中途出错；`proxy-server ...`：窗口与本地代理之间的连接错误；
-  - `navigation-failed ...`、`certificate-rejected ...`、`process-failed ...`：WebView2 层面的错误。
+  - `navigation-failed ...`、`certificate-rejected ...`、`process-failed ...`：WebView2 层面的错误；
+  - `autologin ...`：自动登录找到了哪些输入框、点了哪个按钮，或卡在哪一步；
+  - `java-preparing ...`、`java-running`、`java-exited ...`、`java-failed ...`：Java 远程控制台的下载、启动与退出（含 Java 输出的最后几行）。
 - 反馈问题时请附上这些日志行（不含密码）。

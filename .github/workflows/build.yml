@@ -17,6 +17,9 @@ concurrency:
 env:
   WAILS_VERSION: v2.16.0
   NODE_VERSION: "22"
+  # Java runtime shipped for Java remote consoles (Eclipse Temurin 8 JRE).
+  JRE_URL: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u504-b01/OpenJDK8U-jre_x64_windows_hotspot_8u504b01.zip
+  JRE_SHA256: 82e2cdc6693737c5998445b31f69668fa0da77c7705121053f6508ac84961123
 
 jobs:
   test:
@@ -77,11 +80,27 @@ jobs:
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch bundled Java runtime
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "jre.zip"
+          Invoke-WebRequest -Uri $env:JRE_URL -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:JRE_SHA256) { throw "JRE checksum mismatch: $hash" }
+          $tmp = Join-Path $env:RUNNER_TEMP "jre"
+          Expand-Archive $zip -DestinationPath $tmp
+          $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Force build | Out-Null
+          Move-Item $inner.FullName build\jre
+          & build\jre\bin\java.exe -version
+
       # Opens real WebView2 windows: checks that the console window appears,
-      # accepts only the pinned certificate and fills in the login form.
+      # accepts only the pinned certificate, fills in the login form, and
+      # runs a Java console from a JNLP with the bundled runtime.
       - name: Console window smoke test
         env:
           MDBMC_UI_TEST: "1"
+          MDBMC_JAVA_HOME: ${{ github.workspace }}\build\jre
         run: go test -count=1 -v -run TestConsoleWindowSmoke ./internal/console/
 
       - name: Install Wails CLI and NSIS
@@ -102,8 +121,16 @@ jobs:
       - name: Build BMC simulator
         run: go build -trimpath -o build/bin/bmcsim.exe ./cmd/bmcsim
 
+      # The installer carries the Java runtime; so does this zip for running
+      # without installing (mdbmc.exe next to its jre folder).
+      - name: Portable package
+        shell: pwsh
+        run: Compress-Archive -Path build\bin\mdbmc.exe, build\jre -DestinationPath build\bin\mdbmc-portable-windows-amd64.zip
+
       - uses: actions/upload-artifact@v6
         with:
           name: mdbmc-windows-amd64-${{ steps.version.outputs.version }}
-          path: build/bin/*.exe
+          path: |
+            build/bin/*.exe
+            build/bin/*.zip
           if-no-files-found: error
