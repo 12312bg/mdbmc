@@ -298,3 +298,54 @@ func TestProxyRetriesDroppedJNLP(t *testing.T) {
 		t.Fatalf("always dropped: %d, %d calls\n%s", res.StatusCode, calls.Load(), body)
 	}
 }
+
+// Some AMI MegaRAC firmware (Inspur) announces a longer Content-Length for
+// the Java console file than it sends, or cuts the body off, and closes the
+// connection. A file that arrived whole is used; a cut-off one is asked for
+// again.
+func TestProxyHandlesTruncatedJNLP(t *testing.T) {
+	old := jnlpRetryDelays
+	jnlpRetryDelays = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
+	t.Cleanup(func() { jnlpRetryDelays = old })
+	t.Setenv(javaHomeEnv, t.TempDir()) // no java: the launch fails after the page is served
+
+	var calls, cutFirst atomic.Int32
+	srv, fp := fakeBMC(t, nil)
+	srv.Config.Handler.(*http.ServeMux).HandleFunc("GET /Java/jviewer.jnlp", func(w http.ResponseWriter, r *http.Request) {
+		full := strings.Replace(inspurJNLP, "172.16.1.200:443", r.Host, 1)
+		body := full
+		if calls.Add(1) <= cutFirst.Load() {
+			body = body[:len(body)/2]
+		}
+		conn, rw, _ := http.NewResponseController(w).Hijack()
+		fmt.Fprintf(rw, "HTTP/1.1 200 OK\r\nContent-Type: application/x-java-jnlp-file\r\nContent-Length: %d\r\n\r\n%s", len(full)+64, body)
+		rw.Flush()
+		conn.Close()
+	})
+	p, ev := newTestProxy(t, srv.URL+"/", fp)
+	p.java = newJavaLauncher(t.TempDir(), &http.Client{Transport: p.rp.Transport}, ev.add)
+	c := browserFor(t, p)
+	get(t, c, p.startURL(srv.URL+"/"))
+	open := func() (*http.Response, string) {
+		return get(t, c, p.origin()+"/Java/jviewer.jnlp?JNLPSTR=JViewer", "Sec-Fetch-Dest", "document")
+	}
+
+	// The whole file arrived: used as is.
+	if res, body := open(); res.StatusCode != http.StatusOK || !strings.Contains(body, "正在启动 Java 远程控制台") || calls.Load() != 1 {
+		t.Fatalf("complete file, short of its Content-Length: %d, %d calls\n%s\nevents:\n%s", res.StatusCode, calls.Load(), body, ev)
+	}
+
+	// Cut off once: asked for again.
+	calls.Store(0)
+	cutFirst.Store(1)
+	if res, body := open(); res.StatusCode != http.StatusOK || !strings.Contains(body, "正在启动 Java 远程控制台") || calls.Load() != 2 {
+		t.Fatalf("cut off once: %d, %d calls\n%s", res.StatusCode, calls.Load(), body)
+	}
+
+	// Always cut off: explained.
+	calls.Store(0)
+	cutFirst.Store(10)
+	if res, body := open(); res.StatusCode != http.StatusBadGateway || !strings.Contains(body, "BMC 没有返回 Java 远程控制台") || calls.Load() != 3 {
+		t.Fatalf("always cut off: %d, %d calls\n%s", res.StatusCode, calls.Load(), body)
+	}
+}

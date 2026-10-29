@@ -1,6 +1,7 @@
 package console
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
@@ -110,7 +111,7 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 	}
 	p.rp = &httputil.ReverseProxy{
 		Rewrite:        p.rewrite,
-		Transport:      retryJNLP{bmc.PinnedTransport(fingerprint)},
+		Transport:      retryJNLP{base: bmc.PinnedTransport(fingerprint), report: p.reportOnce},
 		ModifyResponse: p.modifyResponse,
 		ErrorHandler:   p.upstreamError,
 		// Upstream failures after the response started (body copy errors).
@@ -438,30 +439,75 @@ func dropCookieDomain(c string) string {
 
 // retryJNLP retries a Java console file (JNLP) the BMC dropped: some
 // firmware closes the connection when the file is asked for while the web
-// session is still being set up right after the login. Fetching it is a
-// GET, so asking again is safe.
-type retryJNLP struct{ base http.RoundTripper }
+// session is still being set up right after the login, or cuts the file
+// off. Fetching it is a GET, so asking again is safe.
+type retryJNLP struct {
+	base   http.RoundTripper
+	report func(name, detail string)
+}
 
 // jnlpRetryDelays are the waits before each retry.
 var jnlpRetryDelays = []time.Duration{1500 * time.Millisecond, 3 * time.Second}
 
+// maxJNLPSize bounds a Java console file.
+const maxJNLPSize = 1 << 20
+
 func (t retryJNLP) RoundTrip(req *http.Request) (*http.Response, error) {
-	res, err := t.base.RoundTrip(req)
 	if req.Method != http.MethodGet || !strings.HasSuffix(strings.ToLower(req.URL.Path), ".jnlp") {
-		return res, err
+		return t.base.RoundTrip(req)
 	}
-	for _, delay := range jnlpRetryDelays {
-		if err == nil || !droppedConnection(err) {
-			break
+	for attempt := 0; ; attempt++ {
+		res, err := t.base.RoundTrip(req)
+		if err == nil {
+			if err = t.readJNLP(res); err == nil {
+				return res, nil
+			}
+		}
+		if attempt == len(jnlpRetryDelays) || !droppedConnection(err) {
+			return nil, err
 		}
 		select {
-		case <-time.After(delay):
+		case <-time.After(jnlpRetryDelays[attempt]):
 		case <-req.Context().Done():
 			return nil, req.Context().Err()
 		}
-		res, err = t.base.RoundTrip(req)
 	}
-	return res, err
+}
+
+// readJNLP reads the body of a successful response into memory. AMI
+// MegaRAC firmware (Inspur and others) can announce a longer Content-Length
+// than it sends and close the connection; a file that nevertheless ends
+// with </jnlp> is complete and used, anything else that was cut off is an
+// error to retry.
+func (t retryJNLP) readJNLP(res *http.Response) error {
+	if res.StatusCode != http.StatusOK {
+		return nil
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, maxJNLPSize+1))
+	res.Body.Close()
+	switch {
+	case err == nil:
+	case droppedConnection(err) && isPlainEncoding(res.Header.Get("Content-Encoding")) &&
+		bytes.Contains(bytes.ToLower(data), []byte("</jnlp>")):
+		if t.report != nil {
+			t.report("proxy-log", fmt.Sprintf("%s: BMC closed the connection after %d of %d bytes; the file is complete, using it",
+				res.Request.URL.Path, len(data), res.ContentLength))
+		}
+	default:
+		return err
+	}
+	if len(data) > maxJNLPSize {
+		return errors.New("Java 控制台启动文件过大")
+	}
+	res.Body = io.NopCloser(bytes.NewReader(data))
+	res.ContentLength = int64(len(data))
+	res.TransferEncoding = nil
+	res.Header.Set("Content-Length", strconv.Itoa(len(data)))
+	return nil
+}
+
+func isPlainEncoding(enc string) bool {
+	return enc == "" || strings.EqualFold(enc, "identity")
 }
 
 // droppedConnection reports a connection the server closed or reset
