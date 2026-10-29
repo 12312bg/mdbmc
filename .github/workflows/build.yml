@@ -219,11 +219,11 @@ jobs:
 
       - name: Update manifest
         env:
-          MDBMC_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          MDBMC_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
           UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
         run: |
           if [[ -z "$MDBMC_UPDATE_SIGNING_KEY" ]]; then
-            echo "::error::Secret UPDATE_SIGNING_KEY is not set (see README)"; exit 1
+            echo "::error::Secret UPDATE_PRIVATE_KEY is not set (see README)"; exit 1
           fi
           go run ./cmd/release manifest -version "$VERSION" -tag "$TAG" -notes notes.md \
             -installer dist/mdbmc-amd64-installer.exe \

@@ -239,7 +239,7 @@ go run ./cmd/devbridge -sim 2      # 然后打开 http://127.0.0.1:34115
    命令输出公钥，私钥写入 `mdbmc-update.key`。
 2. 在 mdbmc 仓库 **Settings → Secrets and variables → Actions** 中添加：
    - **Variables** → `UPDATE_PUBLIC_KEY`：上一步输出的公钥。编译时写入程序，用于校验更新。
-   - **Secrets** → `UPDATE_SIGNING_KEY`：`mdbmc-update.key` 文件的内容。之后把该文件离线妥善保存，不要提交到仓库。**私钥丢失后，已安装的版本将无法再在线更新**（只能手动安装带新公钥的版本）；私钥泄露时应尽快换新密钥。
+   - **Secrets** → `UPDATE_PRIVATE_KEY`：`mdbmc-update.key` 文件的内容。之后把该文件离线妥善保存，不要提交到仓库。**私钥丢失后，已安装的版本将无法再在线更新**（只能手动安装带新公钥的版本）；私钥泄露时应尽快换新密钥。
    - **Secrets** → `RELEASE_TOKEN`：一个 [Fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)，Repository access 只选 `12312bg/mdbmc-release`，权限 **Contents: Read and write**。用于在 mdbmc-release 创建 Release。
 3. mdbmc-release 仓库需要至少有一个提交（已有 README），Release 的标签建在它的默认分支上。
 

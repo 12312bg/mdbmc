@@ -71,7 +71,7 @@ func genkey(args []string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	fmt.Printf("私钥已写入 %s（填入 GitHub Secret UPDATE_SIGNING_KEY，然后离线妥善保存，不要提交到仓库）\n", *out)
+	fmt.Printf("私钥已写入 %s（填入 GitHub Secret UPDATE_PRIVATE_KEY，然后离线妥善保存，不要提交到仓库）\n", *out)
 	fmt.Printf("公钥（填入 GitHub Variable UPDATE_PUBLIC_KEY）：\n%s\n", update.EncodeKey(pub))
 	return nil
 }
