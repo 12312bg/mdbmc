@@ -52,10 +52,16 @@ jobs:
       - name: Go test
         run: go test -race -count=1 ./...
 
+  # Every push runs the Windows tests. Installers and the portable zip are
+  # built only for v* tags (which the release job publishes) and when the
+  # workflow is run by hand (Actions -> build -> Run workflow) for packages
+  # to try out; the version is compiled in, so a tag gets its own build.
   windows:
-    name: Build (Windows)
+    name: Windows
     runs-on: windows-latest
     needs: test
+    env:
+      PACKAGE: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -68,6 +74,7 @@ jobs:
           go-version-file: go.mod
 
       - uses: actions/setup-node@v6
+        if: env.PACKAGE == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -80,6 +87,7 @@ jobs:
       # than the next, so the online update treats them correctly.
       - name: Version
         id: version
+        if: env.PACKAGE == 'true'
         shell: bash
         env:
           UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
@@ -140,6 +148,7 @@ jobs:
         run: go test -count=1 ./internal/update/
 
       - name: Install Wails CLI and NSIS
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
@@ -151,6 +160,7 @@ jobs:
       # UPDATE_PUBLIC_KEY verifies the signature of update manifests;
       # without it the build can check for updates but never installs one.
       - name: Build application and installer
+        if: env.PACKAGE == 'true'
         shell: bash
         env:
           UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
@@ -160,15 +170,18 @@ jobs:
           -X github.com/12312bg/mdbmc/internal/update.PublicKey=$UPDATE_PUBLIC_KEY"
 
       - name: Build BMC simulator
+        if: env.PACKAGE == 'true'
         run: go build -trimpath -o build/bin/bmcsim.exe ./cmd/bmcsim
 
       # The installer carries the Java runtime; so does this zip for running
       # without installing (mdbmc.exe next to its jre folder).
       - name: Portable package
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: Compress-Archive -Path build\bin\mdbmc.exe, build\jre -DestinationPath build\bin\mdbmc-portable-windows-amd64.zip
 
       - uses: actions/upload-artifact@v6
+        if: env.PACKAGE == 'true'
         with:
           name: mdbmc-windows-amd64-${{ steps.version.outputs.version }}
           path: |

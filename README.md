@@ -274,15 +274,17 @@ cd frontend && npm run typecheck    # 前端类型检查
 
 ### 持续集成（GitHub Actions）
 
-每次推送都会运行 `.github/workflows/build.yml`：
+每次推送都会运行 `.github/workflows/build.yml` 中的测试：
 
 - **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`（含在线更新的签名校验、断点续传、篡改检测、免安装版替换测试）。
 - **Windows**：
-  - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口访问一个只支持 TLS 1.0 的模拟 BMC（WebView2 无法直连），确认页面能经本地代理打开并自动填写、提交登录表单，且 BMC 证书与固定值不一致时拒绝连接。
+  - 控制台窗口冒烟测试：打开真实的 WebView2 窗口访问一个只支持 TLS 1.0 的模拟 BMC（WebView2 无法直连），确认页面能经本地代理打开并自动填写、提交登录表单，且 BMC 证书与固定值不一致时拒绝连接。
   - 测试前先下载固定版本的 Temurin 8 JRE 并校验 SHA-256（版本和校验值见工作流中的 `JRE_URL`、`JRE_SHA256`），冒烟测试会用它经 JNLP 启动一个测试用 Java 程序，并确认关闭窗口后 Java 进程随之结束。
-  - 再编译 `mdbmc.exe`、NSIS 安装包（含 Java 运行环境）和 `bmcsim.exe`，并打包免安装版 `mdbmc-portable-windows-amd64.zip`（`mdbmc.exe` 与 `jre` 文件夹）。
+  - 在线更新助手的 Windows 部分：等待安装目录中的程序退出（含短路径名）。
 
-编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签（同时写入安装包的版本信息）；其他构建的版本号是“下一个补丁版本-dev.距上个标签的提交数+提交号”，例如 v1.2.3 之后第 5 个提交为 `1.2.4-dev.5+abc1234`，在线更新把它看作比 v1.2.3 新、比 v1.2.4 旧，并由 **release** 作业发布到 mdbmc-release，见上方“发布新版本”。编译时通过 `-ldflags` 写入版本号和更新签名公钥（仓库变量 `UPDATE_PUBLIC_KEY`）。
+**安装包只在两种情况下编译**：推送 `v*` 标签时（随后由 **release** 作业发布到 mdbmc-release，见上方“发布新版本”），以及在 Actions 页面手动运行时（**Actions → build → Run workflow**，选择分支，用于试用某个分支的版本）。普通的分支推送不再编译安装包。编译内容为 `mdbmc.exe`、NSIS 安装包（含 Java 运行环境）、`bmcsim.exe` 和免安装版 `mdbmc-portable-windows-amd64.zip`（`mdbmc.exe` 与 `jre` 文件夹），在该次运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。
+
+版本号在编译时通过 `-ldflags` 写入程序，同时写入的还有更新签名公钥（仓库变量 `UPDATE_PUBLIC_KEY`）。推送 `v*` 标签时版本号取自标签（同时写入安装包的版本信息）；手动运行时是“下一个补丁版本-dev.距上个标签的提交数+提交号”，例如 v1.2.3 之后第 5 个提交为 `1.2.4-dev.5+abc1234`，在线更新把它看作比 v1.2.3 新、比 v1.2.4 旧。因为版本号是编译进去的，标签对应的提交会单独编译一次，不复用其他运行的产物。
 
 本地开发时，可以用环境变量 `MDBMC_JAVA_HOME` 指定 Java 运行环境目录（其中有 `bin\javaw.exe`），以代替安装目录中的 `jre`。
 
