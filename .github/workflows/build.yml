@@ -60,6 +60,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # tags and history, for the version of untagged builds
 
       - uses: actions/setup-go@v6
         with:
@@ -72,8 +74,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # The program's version (and the installer's, which must be
-      # MAJOR.MINOR.PATCH) comes from the tag; untagged builds get a
-      # pre-release version that sorts before the next release.
+      # MAJOR.MINOR.PATCH) comes from the tag. Untagged builds count commits
+      # since the last tag as a pre-release of the next patch version
+      # (1.2.4-dev.5+<commit> after v1.2.3): newer than that release, older
+      # than the next, so the online update treats them correctly.
       - name: Version
         id: version
         shell: bash
@@ -89,7 +93,20 @@ jobs:
               echo "::error::Repository variable UPDATE_PUBLIC_KEY is not set; release builds must carry the update signing key (see README)"; exit 1
             fi
           else
-            v="0.1.1-${GITHUB_SHA::7}"
+            tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+            if [[ -n "$tag" ]]; then
+              base="${tag#v}"; n="$(git rev-list --count "$tag..HEAD")"
+            else
+              base="0.1.0"; n="$(git rev-list --count HEAD)"
+            fi
+            if [[ "$n" == 0 ]]; then
+              v="$base"
+            elif [[ "$base" == *-* ]]; then
+              v="$base.dev.$n+${GITHUB_SHA::7}"
+            else
+              IFS=. read -r major minor patch <<< "$base"
+              v="$major.$minor.$((patch + 1))-dev.$n+${GITHUB_SHA::7}"
+            fi
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync("wails.json","utf8"));j.info.productVersion=process.argv[1];fs.writeFileSync("wails.json",JSON.stringify(j,null,2)+"\n")' "${v%%-*}"

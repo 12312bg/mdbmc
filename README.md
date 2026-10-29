@@ -281,7 +281,7 @@ cd frontend && npm run typecheck    # 前端类型检查
   - 测试前先下载固定版本的 Temurin 8 JRE 并校验 SHA-256（版本和校验值见工作流中的 `JRE_URL`、`JRE_SHA256`），冒烟测试会用它经 JNLP 启动一个测试用 Java 程序，并确认关闭窗口后 Java 进程随之结束。
   - 再编译 `mdbmc.exe`、NSIS 安装包（含 Java 运行环境）和 `bmcsim.exe`，并打包免安装版 `mdbmc-portable-windows-amd64.zip`（`mdbmc.exe` 与 `jre` 文件夹）。
 
-编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签（同时写入安装包的版本信息），并由 **release** 作业发布到 mdbmc-release，见上方“发布新版本”。编译时通过 `-ldflags` 写入版本号和更新签名公钥（仓库变量 `UPDATE_PUBLIC_KEY`）。
+编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签（同时写入安装包的版本信息）；其他构建的版本号是“下一个补丁版本-dev.距上个标签的提交数+提交号”，例如 v1.2.3 之后第 5 个提交为 `1.2.4-dev.5+abc1234`，在线更新把它看作比 v1.2.3 新、比 v1.2.4 旧，并由 **release** 作业发布到 mdbmc-release，见上方“发布新版本”。编译时通过 `-ldflags` 写入版本号和更新签名公钥（仓库变量 `UPDATE_PUBLIC_KEY`）。
 
 本地开发时，可以用环境变量 `MDBMC_JAVA_HOME` 指定 Java 运行环境目录（其中有 `bin\javaw.exe`），以代替安装目录中的 `jre`。
 

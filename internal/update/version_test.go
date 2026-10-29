@@ -18,9 +18,12 @@ func TestCompare(t *testing.T) {
 		{"1.0.0-beta.2", "1.0.0-beta.11", -1},
 		{"1.0.0-rc.1", "1.0.0-beta.11", 1},
 		{"1.0.0+build.5", "1.0.0", 0},
-		// CI builds of untagged commits: 0.1.1-<commit>.
-		{"0.1.1-abc1234", "0.1.1", -1},
-		{"0.1.1-abc1234", "0.1.0", 1},
+		// CI builds of untagged commits: next patch, -dev.<commits since tag>.
+		{"0.1.2-dev.3+abc1234", "0.1.1", 1},
+		{"0.1.2-dev.3+abc1234", "0.1.2", -1},
+		{"0.1.2-dev.10+abc1234", "0.1.2-dev.9+def5678", 1},
+		{"0.2.0-beta.1.dev.1+abc1234", "0.2.0-beta.1", 1},
+		{"0.2.0-beta.1.dev.1+abc1234", "0.2.0-beta.2", -1},
 		{"garbage", "0.0.1", -1},
 		{"0.0.1", "garbage", 1},
 	}
