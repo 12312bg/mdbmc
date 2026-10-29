@@ -18,6 +18,7 @@ export type Permission =
   | 'user.manage'
   | 'settings.manage'
   | 'audit.view'
+  | 'system.update'
 
 export interface UserInfo {
   id: number
@@ -376,6 +377,50 @@ export interface Overview {
   polling: boolean
 }
 
+export type UpdateState = 'idle' | 'checking' | 'upToDate' | 'available' | 'downloading' | 'ready' | 'installing'
+/** installer: installed with the setup program; portable: unpacked zip; unsupported: not Windows. */
+export type UpdateMode = 'installer' | 'portable' | 'unsupported'
+
+export interface UpdateRelease {
+  version: string
+  tag: string
+  publishedAt: number
+  /** Markdown */
+  notes: string
+  /** Package size for this install mode; 0 when the release has none. */
+  size: number
+  url: string
+}
+
+export interface UpdateResult {
+  from: string
+  version: string
+  success: boolean
+  error: string
+  time: number
+}
+
+export interface UpdateStatus {
+  currentVersion: string
+  state: UpdateState
+  mode: UpdateMode
+  canInstall: boolean
+  latest: UpdateRelease | null
+  downloaded: number
+  total: number
+  speed: number
+  error: string
+  checkedAt: number
+  lastResult: UpdateResult | null
+}
+
+export interface UpdateConfig {
+  checkHours: number
+  source: string
+  proxy: string
+  defaultSource: string
+}
+
 export interface EventMap {
   'device:status': DeviceStatusEvent
   'device:updated': number
@@ -383,6 +428,7 @@ export interface EventMap {
   'scan:progress': ScanProgress
   'scan:found': ScanFound
   'poll:state': { running: boolean; lastPoll?: number }
+  'update:state': UpdateStatus
 }
 
 export interface Api {
@@ -449,5 +495,18 @@ export interface Api {
     cancelScan(): Promise<void>
     addDiscovered(req: AddDiscoveredRequest): Promise<AddDiscoveredResult>
   }
+  update: {
+    status(): Promise<UpdateStatus>
+    check(): Promise<UpdateStatus>
+    download(): Promise<void>
+    cancelDownload(): Promise<void>
+    /** Exits the program; the update helper installs and restarts it. */
+    install(): Promise<void>
+    dismissResult(): Promise<void>
+    getConfig(): Promise<UpdateConfig>
+    saveConfig(c: UpdateConfig): Promise<void>
+  }
+  /** Opens a web page in the system browser. */
+  openExternal(url: string): void
   on<K extends keyof EventMap>(name: K, cb: (data: EventMap[K]) => void): () => void
 }

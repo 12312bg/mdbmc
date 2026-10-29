@@ -142,6 +142,7 @@ const permRows: { perm: Permission; label: string }[] = [
   { perm: 'user.manage', label: '用户管理' },
   { perm: 'settings.manage', label: '修改系统设置' },
   { perm: 'audit.view', label: '查看审计日志' },
+  { perm: 'system.update', label: '下载安装软件更新、修改更新设置' },
 ]
 </script>
 

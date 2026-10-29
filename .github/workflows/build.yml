@@ -56,6 +56,8 @@ jobs:
     name: Build (Windows)
     runs-on: windows-latest
     needs: test
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
@@ -69,16 +71,28 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # The program's version (and the installer's, which must be
+      # MAJOR.MINOR.PATCH) comes from the tag; untagged builds get a
+      # pre-release version that sorts before the next release.
       - name: Version
         id: version
         shell: bash
+        env:
+          UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             v="${GITHUB_REF#refs/tags/v}"
+            if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH[-PRERELEASE]"; exit 1
+            fi
+            if [[ -z "$UPDATE_PUBLIC_KEY" ]]; then
+              echo "::error::Repository variable UPDATE_PUBLIC_KEY is not set; release builds must carry the update signing key (see README)"; exit 1
+            fi
           else
             v="0.1.1-${GITHUB_SHA::7}"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync("wails.json","utf8"));j.info.productVersion=process.argv[1];fs.writeFileSync("wails.json",JSON.stringify(j,null,2)+"\n")' "${v%%-*}"
 
       - name: Fetch bundled Java runtime
         shell: pwsh
@@ -103,6 +117,11 @@ jobs:
           MDBMC_JAVA_HOME: ${{ github.workspace }}\build\jre
         run: go test -count=1 -v -run TestConsoleWindowSmoke ./internal/console/
 
+      # The update helper's Windows parts: waiting for the program's
+      # processes to exit, short path names.
+      - name: Update helper tests
+        run: go test -count=1 ./internal/update/
+
       - name: Install Wails CLI and NSIS
         shell: pwsh
         run: |
@@ -112,11 +131,16 @@ jobs:
           }
           "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
 
+      # UPDATE_PUBLIC_KEY verifies the signature of update manifests;
+      # without it the build can check for updates but never installs one.
       - name: Build application and installer
         shell: bash
+        env:
+          UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
         run: >
           wails build -clean -trimpath -nsis
-          -ldflags "-X github.com/12312bg/mdbmc/internal/app.Version=${{ steps.version.outputs.version }}"
+          -ldflags "-X github.com/12312bg/mdbmc/internal/app.Version=${{ steps.version.outputs.version }}
+          -X github.com/12312bg/mdbmc/internal/update.PublicKey=$UPDATE_PUBLIC_KEY"
 
       - name: Build BMC simulator
         run: go build -trimpath -o build/bin/bmcsim.exe ./cmd/bmcsim
@@ -134,3 +158,88 @@ jobs:
             build/bin/*.exe
             build/bin/*.zip
           if-no-files-found: error
+
+  # A v* tag publishes the build as a release of 12312bg/mdbmc-release, the
+  # channel the program's online update reads. Tags with a pre-release part
+  # (v1.2.0-beta.1) become pre-releases, which the program does not offer.
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      RELEASE_REPO: 12312bg/mdbmc-release
+      VERSION: ${{ needs.windows.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: mdbmc-windows-amd64-${{ needs.windows.outputs.version }}
+          path: dist
+
+      # The annotated tag's message, or else the commits since the previous tag.
+      - name: Release notes
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          msg=""
+          if [[ "$(git cat-file -t "$TAG")" == tag ]]; then
+            msg="$(git tag -l --format='%(contents)' "$TAG" | sed '/-----BEGIN PGP SIGNATURE-----/,$d')"
+          fi
+          if [[ -z "${msg//[[:space:]]/}" || "$msg" == "$TAG" ]]; then
+            prev="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+            msg="$(git log --no-merges --format='- %s' ${prev:+$prev..}"$TAG")"
+          fi
+          printf '%s\n' "$msg" > notes.md
+          cat notes.md
+
+      - name: Update manifest
+        env:
+          MDBMC_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
+        run: |
+          if [[ -z "$MDBMC_UPDATE_SIGNING_KEY" ]]; then
+            echo "::error::Secret UPDATE_SIGNING_KEY is not set (see README)"; exit 1
+          fi
+          go run ./cmd/release manifest -version "$VERSION" -tag "$TAG" -notes notes.md \
+            -installer dist/mdbmc-amd64-installer.exe \
+            -portable dist/mdbmc-portable-windows-amd64.zip \
+            -pubkey "$UPDATE_PUBLIC_KEY" -out dist
+          (cd dist && sha256sum mdbmc-amd64-installer.exe mdbmc-portable-windows-amd64.zip > SHA256SUMS.txt)
+
+      - name: Publish to ${{ env.RELEASE_REPO }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Secret RELEASE_TOKEN is not set (see README)"; exit 1
+          fi
+          {
+            cat notes.md
+            echo
+            echo '## 下载'
+            echo
+            echo '| 文件 | 说明 |'
+            echo '| --- | --- |'
+            echo '| `mdbmc-amd64-installer.exe` | 安装包（含 Java 运行环境），推荐 |'
+            echo '| `mdbmc-portable-windows-amd64.zip` | 免安装版（`mdbmc.exe` 与 `jre` 文件夹） |'
+            echo '| `latest.json`、`latest.json.sig` | 软件在线更新使用的更新清单及其签名 |'
+            echo '| `SHA256SUMS.txt` | 校验值 |'
+          } > body.md
+          files=(dist/mdbmc-amd64-installer.exe dist/mdbmc-portable-windows-amd64.zip dist/latest.json dist/latest.json.sig dist/SHA256SUMS.txt)
+          if gh release view "$TAG" --repo "$RELEASE_REPO" > /dev/null 2>&1; then
+            # A re-run replaces the files of the release created before.
+            gh release upload "$TAG" "${files[@]}" --repo "$RELEASE_REPO" --clobber
+          else
+            flags=()
+            [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
+            gh release create "$TAG" "${files[@]}" --repo "$RELEASE_REPO" \
+              --title "明点服务器管理系统 $TAG" --notes-file body.md "${flags[@]}"
+          fi

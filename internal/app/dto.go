@@ -339,3 +339,50 @@ type CountItem struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
 }
+
+// UpdateStatus is the software update state; every logged-in user sees it.
+type UpdateStatus struct {
+	CurrentVersion string `json:"currentVersion"`
+	// State is idle, checking, upToDate, available, downloading, ready or
+	// installing (see update.State).
+	State string `json:"state"`
+	// Mode is installer, portable or unsupported (see update.Mode).
+	Mode       string         `json:"mode"`
+	CanInstall bool           `json:"canInstall"`
+	Latest     *UpdateRelease `json:"latest"`
+	Downloaded int64          `json:"downloaded"`
+	Total      int64          `json:"total"`
+	Speed      int64          `json:"speed"`
+	Error      string         `json:"error"`
+	CheckedAt  int64          `json:"checkedAt"`
+	// LastResult is the outcome of the update installed before this start,
+	// until a user has seen it.
+	LastResult *UpdateResult `json:"lastResult"`
+}
+
+// UpdateRelease describes the newer version.
+type UpdateRelease struct {
+	Version     string `json:"version"`
+	Tag         string `json:"tag"`
+	PublishedAt int64  `json:"publishedAt"`
+	Notes       string `json:"notes"`
+	Size        int64  `json:"size"` // of the package for this install mode, 0 when there is none
+	URL         string `json:"url"`  // release page
+}
+
+// UpdateResult is the outcome of an installed update.
+type UpdateResult struct {
+	From    string `json:"from"`
+	Version string `json:"version"`
+	Success bool   `json:"success"`
+	Error   string `json:"error"`
+	Time    int64  `json:"time"`
+}
+
+// UpdateConfig is where updates come from; administrators only.
+type UpdateConfig struct {
+	CheckHours    int    `json:"checkHours"`    // automatic check interval, 0 disables
+	Source        string `json:"source"`        // "" for the default (GitHub)
+	Proxy         string `json:"proxy"`         // "" for the system proxy
+	DefaultSource string `json:"defaultSource"` // read-only
+}

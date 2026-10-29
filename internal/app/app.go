@@ -16,6 +16,7 @@ import (
 	"github.com/12312bg/mdbmc/internal/bmc"
 	"github.com/12312bg/mdbmc/internal/console"
 	"github.com/12312bg/mdbmc/internal/store"
+	"github.com/12312bg/mdbmc/internal/update"
 )
 
 // Version is set at build time with -ldflags "-X .../internal/app.Version=...".
@@ -40,6 +41,9 @@ type App struct {
 	launch  console.Launcher
 	// closeConsoles closes the console windows (on logout).
 	closeConsoles func()
+	// quit exits the program (to install an update); nil when the program
+	// cannot restart itself.
+	quit func()
 
 	settingsMu sync.RWMutex
 	settings   Settings
@@ -50,6 +54,14 @@ type App struct {
 	poller   *poller
 	scanner  *scanner
 	services []any
+
+	updater      *update.Updater
+	updateDir    string
+	updateMu     sync.Mutex
+	updateCfg    UpdateConfig
+	updateResult *UpdateResult
+	updateKick   chan struct{}
+	updateStop   context.CancelFunc
 }
 
 // New opens the database in dataDir and prepares the services.
@@ -73,6 +85,10 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 		st.Close()
 		return nil, err
 	}
+	if err := a.initUpdater(); err != nil {
+		st.Close()
+		return nil, err
+	}
 	a.poller = newPoller(a)
 	a.scanner = &scanner{a: a}
 	a.services = []any{
@@ -82,6 +98,7 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 		&CredentialService{a: a},
 		&BMCService{a: a},
 		&DiscoveryService{a: a},
+		&UpdateService{a: a},
 	}
 	return a, nil
 }
@@ -95,12 +112,20 @@ func (a *App) Startup(ctx context.Context, emit Emitter) {
 	if emit != nil {
 		a.emit = emit
 	}
+	a.startUpdateChecks()
 }
+
+// SetQuit lets the update service exit the program to install an update.
+func (a *App) SetQuit(quit func()) { a.quit = quit }
 
 // Shutdown stops background work and closes the database.
 func (a *App) Shutdown() {
 	a.poller.stop()
 	a.scanner.cancel()
+	if a.updateStop != nil {
+		a.updateStop()
+	}
+	a.updater.Cancel()
 	a.auth.Clear()
 	a.store.Close()
 }

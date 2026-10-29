@@ -31,6 +31,14 @@ export function formatBytes(n: number): string {
   return `${v >= 100 ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)} ${units[i]}`
 }
 
+/** Rough remaining time, e.g. "约 2 分钟". */
+export function formatEta(sec: number): string {
+  if (!isFinite(sec) || sec <= 0) return ''
+  if (sec < 60) return `约 ${Math.max(1, Math.round(sec))} 秒`
+  if (sec < 3600) return `约 ${Math.round(sec / 60)} 分钟`
+  return `约 ${(sec / 3600).toFixed(1)} 小时`
+}
+
 export function formatNumber(v: number | null | undefined, unit = ''): string {
   if (v === null || v === undefined) return '—'
   const s = Math.abs(v) >= 100 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(2)
@@ -86,6 +94,9 @@ export const auditActionLabel: Record<string, string> = {
   'console.web': '打开 Web 管理',
   'console.kvm': '打开远程控制台',
   'settings.update': '修改系统设置',
+  'update.config': '修改更新设置',
+  'update.install': '安装更新',
+  'update.finish': '更新结果',
   'scan.start': '开始扫描',
   'scan.finish': '扫描完成',
 }

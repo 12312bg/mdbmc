@@ -5,7 +5,8 @@ import * as Dev from '@/wailsjs/go/app/DeviceService'
 import * as Cred from '@/wailsjs/go/app/CredentialService'
 import * as BMC from '@/wailsjs/go/app/BMCService'
 import * as Disc from '@/wailsjs/go/app/DiscoveryService'
-import { EventsOn } from '@/wailsjs/runtime/runtime'
+import * as Upd from '@/wailsjs/go/app/UpdateService'
+import { BrowserOpenURL, EventsOn } from '@/wailsjs/runtime/runtime'
 import type { Api } from './types'
 
 // The generated model classes and our interfaces describe the same JSON;
@@ -75,5 +76,16 @@ export const wailsApi: Api = {
     cancelScan: () => Disc.CancelScan(),
     addDiscovered: (r) => c(Disc.AddDiscovered(a(r))),
   },
+  update: {
+    status: () => c(Upd.Status()),
+    check: () => c(Upd.Check()),
+    download: () => Upd.Download(),
+    cancelDownload: () => Upd.CancelDownload(),
+    install: () => Upd.Install(),
+    dismissResult: () => Upd.DismissResult(),
+    getConfig: () => c(Upd.GetConfig()),
+    saveConfig: (cfg) => Upd.SaveConfig(a(cfg)),
+  },
+  openExternal: (url) => BrowserOpenURL(url),
   on: (name, cb) => EventsOn(name, cb as (...data: any) => void),
 }

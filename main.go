@@ -18,6 +18,7 @@ import (
 
 	"github.com/12312bg/mdbmc/internal/app"
 	"github.com/12312bg/mdbmc/internal/console"
+	"github.com/12312bg/mdbmc/internal/update"
 )
 
 //go:embed all:frontend/dist
@@ -53,6 +54,10 @@ func main() {
 		console.RunWindow()
 		return
 	}
+	if len(os.Args) > 2 && os.Args[1] == update.HelperFlag {
+		update.RunHelper(os.Args[2])
+		return
+	}
 
 	dir, err := dataDir()
 	if err != nil {
@@ -74,6 +79,10 @@ func main() {
 	a, err := app.New(dir, launcher)
 	if err != nil {
 		log.Fatalf("初始化失败: %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		// Installing an update exits the program; the update helper starts it again.
+		a.SetQuit(func() { wruntime.Quit(wailsCtx) })
 	}
 
 	err = wails.Run(&options.App{

@@ -20,6 +20,7 @@
 | 硬件资产 | 处理器、内存、磁盘、网卡、电源、固件版本、IPMI FRU；采集结果本地缓存；某一项读取失败时，只在该项右上角显示警告标记，悬停查看原因 |
 | Web / KVM | 在独立的 WebView2 窗口中打开 BMC 管理页并自动登录；Supermicro 支持一键打开 HTML5 iKVM；浪潮等使用 Java 远程控制台（JNLP）的 BMC，用随软件安装的 Java 运行环境直接打开，无需本机安装 Java |
 | 账号与审计 | 本地账号登录，固定三种角色；登录、电源、控制台、查看密码、配置变更等操作都写入审计日志 |
+| 在线更新 | 从 GitHub Releases（[mdbmc-release](https://github.com/12312bg/mdbmc-release)）自动检查新版本，顶栏提示并展示更新说明；管理员一键下载（断点续传）、校验签名后安装并自动重启；支持系统代理、自定义代理和镜像 / 内网更新源，见下方“在线更新” |
 
 ## 角色与权限
 
@@ -34,6 +35,8 @@
 | 添加 / 扫描 / 编辑 / 删除设备、分组、凭据 | ✓ | ✓ | |
 | 查看 BMC 密码明文 | ✓ | ✓ | |
 | 用户管理、系统设置、审计日志 | ✓ | | |
+| 查看新版本提示和更新说明、手动检查更新 | ✓ | ✓ | ✓ |
+| 下载安装软件更新、修改更新设置 | ✓ | | |
 
 权限矩阵集中定义在 `internal/auth/roles.go`。每个后端接口都会单独校验权限，前端只负责隐藏无权限的入口。
 
@@ -65,6 +68,7 @@
   - Java 远程控制台运行的是 BMC 提供的程序（与以前用 Java Web Start 打开时相同），只从固定证书的 BMC 本身下载。
 - **初始密码**：管理员新建或重置的密码只能用于登录并修改密码，修改前后端拒绝其他所有操作。
 - **登录防爆破**：同一用户名连续 5 次密码错误后，锁定 30 秒。
+- **在线更新只安装签名正确的版本**：CI 用 Ed25519 私钥给每个版本的更新清单（含版本号、更新说明和安装包的 SHA-256）签名，软件内置对应公钥。清单签名不符、安装包大小或 SHA-256 与清单不一致的，一律拒绝；安装前会再校验一次下载好的文件。因此发布仓库、镜像站或中间的代理即使被篡改，也无法让软件安装被修改过的程序。详见“在线更新”。
 - **权限边界**：所有角色登录后都能解开同一把数据密钥（只读用户也需要连接 BMC 读取状态），所以角色限制只在软件内部生效。拿到数据库文件和任一账号密码的人，可以绕过软件直接解密 BMC 密码。
 
 ## 品牌适配
@@ -109,7 +113,8 @@
 ├── build/                        # 图标、Windows 清单、NSIS 安装包脚本
 ├── cmd/
 │   ├── bmcsim/                   # 模拟 BMC（IPMI + Redfish + Web 登录页），无真机时用于体验和测试
-│   └── devbridge/                # 开发工具：在普通浏览器中运行真实前端 + 真实后端
+│   ├── devbridge/                # 开发工具：在普通浏览器中运行真实前端 + 真实后端
+│   └── release/                  # 发布工具：生成更新签名密钥、生成并签名更新清单（CI 使用）
 ├── internal/
 │   ├── app/                      # Wails 绑定的服务层：权限校验、审计、批量任务、状态轮询、扫描
 │   ├── auth/                     # 角色、权限矩阵、登录会话与防爆破
@@ -117,15 +122,47 @@
 │   ├── store/                    # SQLite 数据访问与表结构迁移
 │   ├── bmc/                      # BMC 驱动：IPMI / Redfish 封装、协议回退、证书固定、厂商识别、网络发现
 │   ├── bmcsim/                   # 模拟器实现（测试也使用它）
-│   └── console/                  # 控制台子窗口、本地 HTTPS 代理、加载/错误提示页与自动登录脚本
+│   ├── console/                  # 控制台子窗口、本地 HTTPS 代理、加载/错误提示页与自动登录脚本
+│   └── update/                   # 在线更新：版本比较、更新清单签名校验、代理、断点续传下载、安装助手
 └── frontend/
     ├── src/api/                  # 后端接口封装：wails.ts 调用真实后端，mock.ts 提供浏览器预览用的模拟数据
     ├── src/wailsjs/              # Wails 自动生成的绑定（勿手改）
-    ├── src/stores/               # Pinia：会话、设备列表（接收后端实时事件）、主题
-    ├── src/views/                # 页面：总览、设备、设备详情（传感器 / 事件日志 / 资产）、扫描、凭据、用户、审计、设置
-    ├── src/components/           # 通用组件与图表
-    └── src/layouts/              # 主布局：侧边栏、顶栏、空闲锁定、强制修改初始密码
+    ├── src/stores/               # Pinia：会话、设备列表（接收后端实时事件）、主题、软件更新状态
+    ├── src/views/                # 页面：总览、设备、设备详情（传感器 / 事件日志 / 资产）、扫描、凭据、用户、审计、设置（含关于与更新）
+    ├── src/components/           # 通用组件与图表；UpdateDialog（更新对话框）、MarkdownView（更新说明）
+    └── src/layouts/              # 主布局：侧边栏、顶栏（新版本提示）、空闲锁定、强制修改初始密码
 ```
+
+## 在线更新
+
+软件从 GitHub 仓库 [12312bg/mdbmc-release](https://github.com/12312bg/mdbmc-release) 的 Releases 获取新版本。
+
+- **检查**：启动约 20 秒后检查一次，之后按“系统设置 → 软件更新 → 自动检查更新”的间隔（默认 24 小时，0 为关闭）定期检查；失败时 1 小时后重试。任何用户都可以在“系统设置”中手动检查。
+- **提示**：有新版本时，顶栏右侧显示“新版本 vX.Y.Z”，点击打开更新对话框，查看版本、发布日期、更新包大小和更新说明。所有角色都能看到提示，只有管理员能下载和安装。
+- **下载**：管理员点击“下载更新”，下载过程中可以关闭对话框在后台继续，顶栏显示进度。网络中断或取消后再次下载会从断点继续。下载完成后校验大小和 SHA-256。
+- **安装**：点击“立即安装”并确认后，软件关闭（同时关闭所有 Web / KVM 控制台窗口），由更新助手完成安装并自动重新打开软件。按安装方式不同：
+  - **安装版**（用安装包安装，安装目录中有 `uninstall.exe`）：静默运行新版安装包，安装到原目录。安装包需要管理员权限，会弹出 Windows 的 UAC 授权窗口。
+  - **免安装版**（解压的 zip）：直接替换 `mdbmc.exe` 和 `jre` 文件夹，替换失败时恢复原文件。程序所在目录需要可写。
+- **结果**：重新打开后提示“更新完成”或失败原因（例如 UAC 授权被取消，此时仍是原版本）。安装和结果都记入审计日志（“安装更新”“更新结果”），更新助手的过程写入日志文件，以 `update:` 开头。
+- **只接收正式版本**：标签带“-”的版本（如 `v1.2.0-beta.1`）发布为 GitHub 预发布，软件不会收到。
+
+### 网络、代理与更新源
+
+在“系统设置 → 软件更新”中设置（仅管理员）：
+
+- **代理**：留空时使用环境变量 `HTTPS_PROXY` / `HTTP_PROXY`，其次使用 Windows 系统代理（“Internet 选项”中的手动代理及其例外列表，不支持 PAC 自动配置脚本）。也可以填写 `http://主机:端口` 或 `socks5://主机:端口`，只用于检查和下载更新。
+- **更新源**：留空即 `https://github.com/12312bg/mdbmc-release/releases`。访问 GitHub 不稳定时，可以填写：
+  - 支持 GitHub 地址前缀的镜像（例如 `https://镜像域名/https://github.com/12312bg/mdbmc-release/releases`）；
+  - 内网 Web 服务器上的目录，结构与 GitHub Releases 相同：
+
+    ```
+    <更新源>/latest/download/latest.json        # 最新版本的更新清单
+    <更新源>/latest/download/latest.json.sig    # 清单签名
+    <更新源>/download/v1.2.3/mdbmc-amd64-installer.exe
+    <更新源>/download/v1.2.3/mdbmc-portable-windows-amd64.zip
+    ```
+
+    文件从 GitHub Release 原样下载即可。由于清单有签名，镜像和内网服务器无法篡改更新内容。
 
 ## 开发与构建
 
@@ -191,6 +228,42 @@ cd frontend && npm run build && cd ..
 go run ./cmd/devbridge -sim 2      # 然后打开 http://127.0.0.1:34115
 ```
 
+### 发布新版本
+
+#### 一次性准备
+
+1. **生成更新签名密钥**（在自己的电脑上执行）：
+   ```bash
+   go run ./cmd/release genkey -out mdbmc-update.key
+   ```
+   命令输出公钥，私钥写入 `mdbmc-update.key`。
+2. 在 mdbmc 仓库 **Settings → Secrets and variables → Actions** 中添加：
+   - **Variables** → `UPDATE_PUBLIC_KEY`：上一步输出的公钥。编译时写入程序，用于校验更新。
+   - **Secrets** → `UPDATE_SIGNING_KEY`：`mdbmc-update.key` 文件的内容。之后把该文件离线妥善保存，不要提交到仓库。**私钥丢失后，已安装的版本将无法再在线更新**（只能手动安装带新公钥的版本）；私钥泄露时应尽快换新密钥。
+   - **Secrets** → `RELEASE_TOKEN`：一个 [Fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)，Repository access 只选 `12312bg/mdbmc-release`，权限 **Contents: Read and write**。用于在 mdbmc-release 创建 Release。
+3. mdbmc-release 仓库需要至少有一个提交（已有 README），Release 的标签建在它的默认分支上。
+
+换密钥时，可以让 `UPDATE_PUBLIC_KEY` 暂时同时包含新旧两个公钥（用英文逗号分隔），先发布一个用旧私钥签名、内置两个公钥的版本，再改用新私钥。
+
+#### 发布
+
+更新说明取自附注标签（annotated tag）的内容，支持 Markdown；用轻量标签或标签内容为空时，自动列出与上一个标签之间的提交。
+
+```bash
+# notes.md 写本次的更新说明；--cleanup=verbatim 保留以 # 开头的 Markdown 标题
+git tag -a v1.2.0 -F notes.md --cleanup=verbatim
+git push origin v1.2.0
+```
+
+CI 编译后，`release` 作业会：
+
+- 生成 `latest.json`（版本、更新说明、各安装包的大小和 SHA-256）并用私钥签名得到 `latest.json.sig`，同时用 `UPDATE_PUBLIC_KEY` 验证签名，密钥不匹配时停止发布；
+- 在 mdbmc-release 创建 Release `v1.2.0`，上传安装包、免安装版 zip、`latest.json`、`latest.json.sig` 和 `SHA256SUMS.txt`。
+
+重新运行失败的作业时，会覆盖同名 Release 中的文件。标签带“-”（如 `v1.2.0-beta.1`）时发布为预发布版本，软件的在线更新不会收到。
+
+本地调试在线更新：没有内置公钥的开发版本可以用环境变量 `MDBMC_UPDATE_PUBLIC_KEY` 指定公钥（正式版本忽略该变量），并在“系统设置”中把更新源指向本地服务器。
+
 ### 测试
 
 ```bash
@@ -202,13 +275,13 @@ cd frontend && npm run typecheck    # 前端类型检查
 
 每次推送都会运行 `.github/workflows/build.yml`：
 
-- **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`。
+- **Linux**：前端类型检查与构建、`go vet`（含 Windows 目标）、`go test -race`（含在线更新的签名校验、断点续传、篡改检测、免安装版替换测试）。
 - **Windows**：
   - 先跑控制台窗口冒烟测试：打开真实的 WebView2 窗口访问一个只支持 TLS 1.0 的模拟 BMC（WebView2 无法直连），确认页面能经本地代理打开并自动填写、提交登录表单，且 BMC 证书与固定值不一致时拒绝连接。
   - 测试前先下载固定版本的 Temurin 8 JRE 并校验 SHA-256（版本和校验值见工作流中的 `JRE_URL`、`JRE_SHA256`），冒烟测试会用它经 JNLP 启动一个测试用 Java 程序，并确认关闭窗口后 Java 进程随之结束。
   - 再编译 `mdbmc.exe`、NSIS 安装包（含 Java 运行环境）和 `bmcsim.exe`，并打包免安装版 `mdbmc-portable-windows-amd64.zip`（`mdbmc.exe` 与 `jre` 文件夹）。
 
-编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签。
+编译产物在 Actions 运行页面的 **Artifacts** 中下载。单独的 `mdbmc.exe` 不带 Java 运行环境，需要 Java 远程控制台时请用安装包或免安装版 zip。推送 `v*` 标签时，版本号取自标签（同时写入安装包的版本信息），并由 **release** 作业发布到 mdbmc-release，见上方“发布新版本”。编译时通过 `-ldflags` 写入版本号和更新签名公钥（仓库变量 `UPDATE_PUBLIC_KEY`）。
 
 本地开发时，可以用环境变量 `MDBMC_JAVA_HOME` 指定 Java 运行环境目录（其中有 `bin\javaw.exe`），以代替安装目录中的 `jre`。
 
@@ -218,6 +291,7 @@ cd frontend && npm run typecheck    # 前端类型检查
 - 日志：`%APPDATA%\mdbmc\mdbmc.log`
 - 控制台窗口的浏览器配置：`%APPDATA%\mdbmc\console\<设备ID>\`
 - Java 远程控制台从 BMC 下载的程序包缓存：`%APPDATA%\mdbmc\console\<设备ID>\java\`
+- 在线更新下载的安装包和更新助手：`%APPDATA%\mdbmc\updates\`（安装成功后自动清理）
 
 可以通过环境变量 `MDBMC_DATA_DIR` 指定其他目录。
 
@@ -233,4 +307,5 @@ cd frontend && npm run typecheck    # 前端类型检查
   - `navigation-failed ...`、`certificate-rejected ...`、`process-failed ...`：WebView2 层面的错误；
   - `autologin ...`：自动登录找到了哪些输入框、点了哪个按钮，或卡在哪一步；
   - `java-preparing ...`、`java-running`、`java-exited ...`、`java-failed ...`：Java 远程控制台的下载、启动与退出（含 Java 输出的最后几行）。
+- 在线更新的安装过程以 `update:` 开头，例如 `update: installing 1.2.0 over 1.1.0 (installer, ...)`、`update: installed 1.2.0` 或 `update: failed: ...`。检查更新失败时，“系统设置”的“关于”卡片中显示原因（无法连接、签名校验失败等）。
 - 反馈问题时请附上这些日志行（不含密码）。

@@ -31,13 +31,14 @@ const (
 	PermUserManage       Permission = "user.manage"       // manage local users
 	PermSettingsManage   Permission = "settings.manage"   // change application settings
 	PermAuditView        Permission = "audit.view"        // read the audit log
+	PermSystemUpdate     Permission = "system.update"     // download and install software updates, configure the update source
 )
 
 // AllPermissions is every permission, used for the administrator role.
 var AllPermissions = []Permission{
 	PermDeviceView, PermDeviceManage, PermCredentialReveal, PermPowerControl,
 	PermSELClear, PermWebOpen, PermWebAutoLogin, PermKVM,
-	PermUserManage, PermSettingsManage, PermAuditView,
+	PermUserManage, PermSettingsManage, PermAuditView, PermSystemUpdate,
 }
 
 var rolePermissions = map[Role][]Permission{

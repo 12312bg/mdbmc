@@ -697,6 +697,116 @@ export namespace app {
 	        this.scanConcurrency = source["scanConcurrency"];
 	    }
 	}
+	export class UpdateConfig {
+	    checkHours: number;
+	    source: string;
+	    proxy: string;
+	    defaultSource: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.checkHours = source["checkHours"];
+	        this.source = source["source"];
+	        this.proxy = source["proxy"];
+	        this.defaultSource = source["defaultSource"];
+	    }
+	}
+	export class UpdateRelease {
+	    version: string;
+	    tag: string;
+	    publishedAt: number;
+	    notes: string;
+	    size: number;
+	    url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateRelease(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.tag = source["tag"];
+	        this.publishedAt = source["publishedAt"];
+	        this.notes = source["notes"];
+	        this.size = source["size"];
+	        this.url = source["url"];
+	    }
+	}
+	export class UpdateResult {
+	    from: string;
+	    version: string;
+	    success: boolean;
+	    error: string;
+	    time: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.from = source["from"];
+	        this.version = source["version"];
+	        this.success = source["success"];
+	        this.error = source["error"];
+	        this.time = source["time"];
+	    }
+	}
+	export class UpdateStatus {
+	    currentVersion: string;
+	    state: string;
+	    mode: string;
+	    canInstall: boolean;
+	    latest: UpdateRelease;
+	    downloaded: number;
+	    total: number;
+	    speed: number;
+	    error: string;
+	    checkedAt: number;
+	    lastResult: UpdateResult;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.currentVersion = source["currentVersion"];
+	        this.state = source["state"];
+	        this.mode = source["mode"];
+	        this.canInstall = source["canInstall"];
+	        this.latest = this.convertValues(source["latest"], UpdateRelease);
+	        this.downloaded = source["downloaded"];
+	        this.total = source["total"];
+	        this.speed = source["speed"];
+	        this.error = source["error"];
+	        this.checkedAt = source["checkedAt"];
+	        this.lastResult = this.convertValues(source["lastResult"], UpdateResult);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class UserDTO {
 	    id: number;
 	    username: string;

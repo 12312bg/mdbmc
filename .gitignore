@@ -11,3 +11,5 @@ frontend/package.json.md5
 /devbridge
 /bmcsim
 *.exe
+# Update signing private key (cmd/release genkey); never commit it
+mdbmc-update.key

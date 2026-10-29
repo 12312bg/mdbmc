@@ -1,7 +1,7 @@
 // In-memory backend for previewing the UI in a plain browser (npm run dev).
 // Any password of 8+ characters logs in as an existing user.
 import type {
-  Api, AuditEntry, Credential, Device, EventMap, Group, Inventory, Role, SELEntry, Sensor, UserDTO, UserInfo,
+  Api, AuditEntry, Credential, Device, EventMap, Group, Inventory, Role, SELEntry, Sensor, UpdateStatus, UserDTO, UserInfo,
 } from './types'
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -10,7 +10,7 @@ const wait = () => sleep(150 + Math.random() * 250)
 
 const perms: Record<Role, UserInfo['permissions']> = {
   admin: ['device.view', 'device.manage', 'credential.reveal', 'power.control', 'sel.clear', 'console.web',
-    'console.autologin', 'console.kvm', 'user.manage', 'settings.manage', 'audit.view'],
+    'console.autologin', 'console.kvm', 'user.manage', 'settings.manage', 'audit.view', 'system.update'],
   operator: ['device.view', 'device.manage', 'credential.reveal', 'power.control', 'sel.clear', 'console.web',
     'console.autologin', 'console.kvm'],
   viewer: ['device.view', 'console.web'],
@@ -113,6 +113,59 @@ function log(action: string, target: string, success = true, detail = '', user =
 })
 
 let settings = { pollIntervalSec: 120, maxConcurrency: 32, ipmiTimeoutSec: 5, redfishTimeoutSec: 20, idleLockMinutes: 30, scanConcurrency: 64 }
+
+// ----- software update -----
+// ?update=none (up to date), offline (check fails), portable (portable copy),
+// done / failed (outcome of an update shown after the restart).
+const updParam = params.get('update') ?? ''
+const mockNotes = `## 新功能
+
+- **在线更新**：自动检查 GitHub Releases 上的新版本，下载后一键安装并重启
+- 更新包使用 Ed25519 签名与 SHA-256 双重校验，签名不符的更新会被拒绝
+- 支持系统代理、自定义 HTTP / SOCKS5 代理，以及镜像或内网更新源
+
+## 改进
+
+- 传感器页可按严重程度筛选，事件日志支持分页
+- 浪潮 Java KVM 打开更快，连接中断时自动重试
+
+## 修复
+
+- 修复部分 Dell iDRAC 9 固件识别为“通用”品牌的问题
+- 修复深色主题下图表悬停提示看不清的问题
+
+详细说明见 [发布页面](https://github.com/12312bg/mdbmc-release/releases)。`
+let upd: UpdateStatus = {
+  currentVersion: '0.1.0-preview', state: 'idle', mode: updParam === 'portable' ? 'portable' : 'installer', canInstall: true,
+  latest: null, downloaded: 0, total: 0, speed: 0, error: '', checkedAt: 0,
+  lastResult: updParam === 'done' ? { from: '0.1.0-preview', version: '0.2.0', success: true, error: '', time: now() }
+    : updParam === 'failed' ? { from: '0.1.0-preview', version: '0.2.0', success: false, error: '没有获得管理员授权（UAC 已取消）', time: now() }
+    : null,
+}
+let updConfig = { checkHours: 24, source: '', proxy: '', defaultSource: 'https://github.com/12312bg/mdbmc-release/releases' }
+let updTimer: number | undefined
+let autoChecked = false
+function setUpd(p: Partial<UpdateStatus>) {
+  upd = { ...upd, ...p }
+  emit('update:state', { ...upd })
+}
+async function mockCheck() {
+  const ready = upd.state === 'ready'
+  setUpd({ state: 'checking', error: '' })
+  await sleep(900)
+  if (updParam === 'offline') {
+    setUpd({ state: 'idle', checkedAt: now(), error: '检查更新失败：无法连接更新服务器（dial tcp 140.82.112.3:443: i/o timeout）' })
+    throw new Error(upd.error)
+  }
+  if (updParam === 'none' || updParam === 'done') {
+    setUpd({ state: 'upToDate', checkedAt: now(), latest: null })
+    return
+  }
+  setUpd({
+    state: ready ? 'ready' : 'available', checkedAt: now(),
+    latest: { version: '0.2.0', tag: 'v0.2.0', publishedAt: now() - 86400 * 2, notes: mockNotes, size: upd.mode === 'portable' ? 46_734_811 : 44_902_376, url: 'https://github.com/12312bg/mdbmc-release/releases/tag/v0.2.0' },
+  })
+}
 
 function deviceOr404(id: number) {
   const d = devices.find((x) => x.id === id)
@@ -467,6 +520,63 @@ export const mockApi: Api = {
       }
       return { added: req.hosts.length, skipped: [] }
     },
+  },
+  update: {
+    async status() {
+      if (!current) throw new Error('未登录或会话已锁定，请重新登录')
+      // Mimics the automatic check shortly after startup.
+      if (!autoChecked) {
+        autoChecked = true
+        setTimeout(() => void mockCheck().catch(() => {}), 2500)
+      }
+      return { ...upd }
+    },
+    async check() {
+      if (!current) throw new Error('未登录或会话已锁定，请重新登录')
+      await mockCheck()
+      return { ...upd }
+    },
+    async download() {
+      need('system.update')
+      if (upd.state !== 'available' || !upd.latest) throw new Error('没有可下载的新版本')
+      const total = upd.latest.size
+      setUpd({ state: 'downloading', downloaded: 0, total, speed: 0, error: '' })
+      updTimer = window.setInterval(() => {
+        const step = 1_200_000 + Math.random() * 1_800_000
+        const downloaded = Math.min(total, upd.downloaded + step)
+        if (downloaded >= total) {
+          window.clearInterval(updTimer)
+          setUpd({ state: 'ready', downloaded, speed: 0 })
+        } else {
+          setUpd({ downloaded, speed: Math.round(step * 4) })
+        }
+      }, 250)
+    },
+    async cancelDownload() {
+      need('system.update')
+      window.clearInterval(updTimer)
+      setUpd({ state: 'available', speed: 0 })
+    },
+    async install() {
+      need('system.update')
+      if (upd.state !== 'ready') throw new Error('更新包尚未下载完成')
+      log('update.install', 'v0.2.0', true, `从 ${upd.currentVersion} 更新，方式：${upd.mode === 'portable' ? '替换程序文件' : '安装程序'}`)
+      setUpd({ state: 'installing' })
+      // The real program exits here and starts again after the update.
+      setTimeout(() => { location.search = '?update=done' }, 3000)
+    },
+    async dismissResult() { upd = { ...upd, lastResult: null } },
+    async getConfig() { need('system.update'); return { ...updConfig } },
+    async saveConfig(c) {
+      need('system.update'); await wait()
+      if (c.checkHours < 0 || c.checkHours > 720) throw new Error('自动检查间隔需在 0 到 720 小时之间')
+      if (c.source && !/^https?:\/\/[^/?#]+/.test(c.source.trim())) throw new Error('更新源需为 http:// 或 https:// 开头的地址，且不带查询参数')
+      updConfig = { ...c, source: c.source.trim().replace(/\/+$/, ''), proxy: c.proxy.trim(), defaultSource: updConfig.defaultSource }
+      log('update.config', '', true, `自动检查间隔 ${c.checkHours} 小时`)
+    },
+  },
+  openExternal(url) {
+    window.open(url, '_blank', 'noopener')
   },
   on(name, cb) {
     if (!listeners.has(name)) listeners.set(name, new Set())

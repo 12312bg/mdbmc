@@ -3,23 +3,28 @@ import { computed, h, onBeforeUnmount, onMounted, ref, watch, type Component } f
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NDropdown, NButton, NTooltip, NTag, NAvatar,
-  type MenuOption,
+  NProgress, useNotification, type MenuOption,
 } from 'naive-ui'
 import {
   SpeedometerOutline, ServerOutline, ScanOutline, KeyOutline, PeopleOutline, DocumentTextOutline, SettingsOutline,
   MoonOutline, SunnyOutline, ContrastOutline, LogOutOutline, LockClosedOutline, ChevronDown, RefreshOutline,
+  CheckmarkCircle,
 } from '@vicons/ionicons5'
 import AppLogo from '@/components/AppLogo.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import UpdateDialog from '@/components/UpdateDialog.vue'
 import { api, type Permission } from '@/api'
 import { useSession } from '@/stores/session'
 import { useTheme } from '@/stores/theme'
 import { useDevices } from '@/stores/devices'
+import { useUpdate } from '@/stores/update'
 import { relativeTime } from '@/utils/format'
 
 const session = useSession()
 const theme = useTheme()
 const devices = useDevices()
+const upd = useUpdate()
+const notification = useNotification()
 const route = useRoute()
 const router = useRouter()
 
@@ -67,10 +72,24 @@ const forced = computed(() => !!session.user?.mustChangePassword)
 const viewKey = ref(0)
 watch(forced, async (now, before) => {
   if (before && !now) {
-    await Promise.all([session.loadSettings(), devices.load()])
+    await Promise.all([session.loadSettings(), devices.load(), loadUpdate()])
     viewKey.value++
   }
 })
+
+// Software update: the header shows a new version; after an update the
+// program starts again and reports how it went once.
+async function loadUpdate() {
+  await upd.load()
+  const r = upd.status?.lastResult
+  if (!r) return
+  if (r.success) {
+    notification.success({ title: '更新完成', content: `已更新到 v${r.version}。`, duration: 8000, keepAliveOnHover: true })
+  } else {
+    notification.error({ title: '更新未完成', content: `未能更新到 v${r.version}：${r.error}。当前仍是 v${r.from}。`, duration: 0 })
+  }
+  await upd.dismissResult().catch(() => {})
+}
 
 // Idle lock: ends the session (wiping the vault key) after inactivity;
 // console windows stay open.
@@ -89,7 +108,9 @@ onMounted(async () => {
     }
   }, 15_000)
   devices.subscribe()
+  upd.subscribe()
   if (forced.value) return
+  void loadUpdate()
   await devices.load()
   try {
     const ov = await api.bmc.overview()
@@ -159,6 +180,20 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
           </n-tooltip>
         </div>
         <div class="header-right">
+          <button v-if="upd.latest" class="upd-pill" :class="`upd-${upd.state}`" @click="upd.dialog = true">
+            <template v-if="upd.state === 'downloading'">
+              <n-progress type="circle" :percentage="upd.progress" :show-indicator="false" :stroke-width="16" class="upd-ring" />
+              <span>正在下载 {{ upd.progress.toFixed(0) }}%</span>
+            </template>
+            <template v-else-if="upd.state === 'ready' || upd.state === 'installing'">
+              <n-icon :component="CheckmarkCircle" :size="15" />
+              <span>新版本可安装</span>
+            </template>
+            <template v-else>
+              <span class="upd-dot" />
+              <span>新版本 v{{ upd.latest.version }}</span>
+            </template>
+          </button>
           <n-tooltip>
             <template #trigger>
               <n-button quaternary circle @click="theme.cycle()">
@@ -186,6 +221,7 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
       </n-layout-content>
     </n-layout>
     <ChangePasswordModal :show="showPassword || forced" :forced="forced" @update:show="(v: boolean) => (showPassword = v)" />
+    <UpdateDialog />
   </n-layout>
 </template>
 
@@ -264,6 +300,73 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
 .user-name {
   font-size: 13px;
   font-weight: 500;
+}
+.upd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0 12px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.upd-pill:hover {
+  border-color: var(--accent);
+}
+.upd-pill:focus {
+  outline: none;
+}
+.upd-pill:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.upd-pill.upd-ready,
+.upd-pill.upd-installing {
+  border-color: color-mix(in srgb, var(--status-good) 40%, transparent);
+  background: color-mix(in srgb, var(--status-good) 10%, var(--surface));
+  color: var(--status-good);
+}
+.upd-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.upd-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: upd-pulse 2s ease-out infinite;
+}
+@keyframes upd-pulse {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upd-dot::after {
+    animation: none;
+  }
+}
+.upd-ring {
+  width: 15px;
 }
 .content {
   height: calc(100vh - 60px);
