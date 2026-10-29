@@ -106,6 +106,10 @@ type Identity struct {
 	// TLSFingerprint is the certificate fingerprint observed during Identify.
 	TLSFingerprint string   `json:"tlsFingerprint"`
 	Warnings       []string `json:"warnings"`
+
+	// fruNames are the baseboard FRU's manufacturer fields, which name the
+	// server maker when the BMC reports its firmware vendor's IANA number.
+	fruNames []string
 }
 
 // Status is the result of a lightweight poll.

@@ -39,6 +39,10 @@ type vendorDef struct {
 	tokens []string
 }
 
+// VendorRulesVersion changes whenever vendor detection learns brands or
+// identifiers; devices recorded as unrecognised are identified again then.
+const VendorRulesVersion = 2
+
 // IANA numbers are from the IANA Private Enterprise Numbers registry; a
 // vendor often holds several (subsidiaries, renamed companies).
 var vendorDefs = []vendorDef{

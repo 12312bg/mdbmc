@@ -262,3 +262,39 @@ func TestJavaMissingRuntime(t *testing.T) {
 		t.Fatalf("status %+v", st)
 	}
 }
+
+// A BMC that drops the first request for the Java console file (session
+// still being set up) gets asked again; one that keeps dropping it gets an
+// explanatory page.
+func TestProxyRetriesDroppedJNLP(t *testing.T) {
+	old := jnlpRetryDelays
+	jnlpRetryDelays = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
+	t.Cleanup(func() { jnlpRetryDelays = old })
+
+	var calls, failFirst atomic.Int32
+	srv, fp := fakeBMC(t, nil)
+	srv.Config.Handler.(*http.ServeMux).HandleFunc("GET /Java/jviewer.jnlp", func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) <= failFirst.Load() {
+			conn, _, _ := http.NewResponseController(w).Hijack()
+			conn.Close()
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-java-jnlp-file")
+		fmt.Fprint(w, "<jnlp/>")
+	})
+	p, _ := newTestProxy(t, srv.URL+"/", fp)
+	c := browserFor(t, p)
+	get(t, c, p.startURL(srv.URL+"/"))
+
+	failFirst.Store(1)
+	if res, body := get(t, c, p.origin()+"/Java/jviewer.jnlp?JNLPSTR=JViewer"); res.StatusCode != http.StatusOK || body != "<jnlp/>" || calls.Load() != 2 {
+		t.Fatalf("after one dropped request: %d %q, %d calls", res.StatusCode, body, calls.Load())
+	}
+	calls.Store(0)
+	failFirst.Store(10)
+	res, body := get(t, c, p.origin()+"/Java/jviewer.jnlp?JNLPSTR=JViewer")
+	// Three attempts here; Go's transport may add one more on a reused connection.
+	if res.StatusCode != http.StatusBadGateway || !strings.Contains(body, "BMC 没有返回 Java 远程控制台") || calls.Load() < 3 {
+		t.Fatalf("always dropped: %d, %d calls\n%s", res.StatusCode, calls.Load(), body)
+	}
+}

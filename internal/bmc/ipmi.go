@@ -350,6 +350,26 @@ func (i *ipmiConn) clearSEL(ctx context.Context) error {
 	return err
 }
 
+// baseboardFRU reads the manufacturer and product names of FRU device 0,
+// the baseboard.
+func (i *ipmiConn) baseboardFRU(ctx context.Context) (mfg []string, product string, err error) {
+	f, err := i.c.GetFRU(ctx, 0, "baseboard")
+	if err != nil {
+		return nil, "", err
+	}
+	if a := f.ProductInfoArea; a != nil {
+		mfg = append(mfg, types.FRUFieldString(a.ManufacturerTypeLength, a.Manufacturer))
+		product = types.FRUFieldString(a.NameTypeLength, a.Name)
+	}
+	if a := f.BoardInfoArea; a != nil {
+		mfg = append(mfg, types.FRUFieldString(a.ManufacturerTypeLength, a.Manufacturer))
+		if product == "" {
+			product = types.FRUFieldString(a.ProductNameTypeLength, a.ProductName)
+		}
+	}
+	return mfg, strings.TrimSpace(product), nil
+}
+
 func (i *ipmiConn) fru(ctx context.Context) ([]FRUInfo, error) {
 	frus, err := i.c.GetFRUs(ctx)
 	if err != nil {

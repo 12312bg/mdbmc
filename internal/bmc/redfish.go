@@ -238,6 +238,7 @@ func (r *rfConn) identity(id *Identity) []string {
 		}
 	}
 	names := append([]string{id.Manufacturer, r.svc.Vendor, r.svc.Product}, oemKeys...)
+	names = append(names, id.fruNames...)
 	id.Vendor = DetectVendor(id.ManufacturerID, names...)
 	return warns
 }

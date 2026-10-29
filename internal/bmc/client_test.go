@@ -287,3 +287,17 @@ func TestLegacyTLSBMC(t *testing.T) {
 		t.Fatalf("other pin: want FingerprintMismatchError, got %v", err)
 	}
 }
+
+// Over IPMI alone the manufacturer and model come from the baseboard FRU.
+func TestIdentifyIPMIOnlyUsesFRU(t *testing.T) {
+	sim := startSim(t, bmcsim.Options{DisableRedfish: true})
+	c := bmc.New(target(sim, bmc.ProtocolIPMI))
+	defer c.Close()
+	id, err := c.Identify(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.Vendor != bmc.VendorSupermicro || id.Manufacturer != "Supermicro" || id.Model != "SYS-120U-TNR" {
+		t.Fatalf("identity = %+v", id)
+	}
+}

@@ -121,16 +121,19 @@
     location.href = cfg.after;
   }
   // waitLoggedIn waits for the login form to go away (single-page UIs log
-  // in without a reload), then goes on to "after". It keeps waiting after
-  // a failed automatic login, so that logging in by hand still gets there.
+  // in without a reload), then goes on to "after". The form must stay gone
+  // for a few seconds: a page may hide it while the BMC is still setting
+  // up the session. It keeps waiting after a failed automatic login, so
+  // that logging in by hand still gets there.
   function waitLoggedIn(submitted) {
-    var tries = 0;
+    var tries = 0, gone = 0;
     var t = setInterval(function () {
       tries++;
-      if (!passwordField()) {
+      gone = passwordField() ? 0 : gone + 1;
+      if (gone >= (cfg.after ? 6 : 1)) {
         clearInterval(t);
         goAfter('signed in');
-      } else if (tries === 60 && submitted) {
+      } else if (tries === 60 && submitted && gone === 0) {
         report('autologin', 'still on the login page 30s after submitting (wrong password, captcha or unsupported form?)');
         if (!cfg.after) clearInterval(t);
       } else if (tries > 1200) {

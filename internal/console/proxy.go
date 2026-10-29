@@ -110,7 +110,7 @@ func startProxy(bmcURL, fingerprint string, report func(name, detail string)) (*
 	}
 	p.rp = &httputil.ReverseProxy{
 		Rewrite:        p.rewrite,
-		Transport:      bmc.PinnedTransport(fingerprint),
+		Transport:      retryJNLP{bmc.PinnedTransport(fingerprint)},
 		ModifyResponse: p.modifyResponse,
 		ErrorHandler:   p.upstreamError,
 		// Upstream failures after the response started (body copy errors).
@@ -436,11 +436,60 @@ func dropCookieDomain(c string) string {
 	return strings.Join(out, ";")
 }
 
+// retryJNLP retries a Java console file (JNLP) the BMC dropped: some
+// firmware closes the connection when the file is asked for while the web
+// session is still being set up right after the login. Fetching it is a
+// GET, so asking again is safe.
+type retryJNLP struct{ base http.RoundTripper }
+
+// jnlpRetryDelays are the waits before each retry.
+var jnlpRetryDelays = []time.Duration{1500 * time.Millisecond, 3 * time.Second}
+
+func (t retryJNLP) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := t.base.RoundTrip(req)
+	if req.Method != http.MethodGet || !strings.HasSuffix(strings.ToLower(req.URL.Path), ".jnlp") {
+		return res, err
+	}
+	for _, delay := range jnlpRetryDelays {
+		if err == nil || !droppedConnection(err) {
+			break
+		}
+		select {
+		case <-time.After(delay):
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
+		res, err = t.base.RoundTrip(req)
+	}
+	return res, err
+}
+
+// droppedConnection reports a connection the server closed or reset
+// without an answer.
+func droppedConnection(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "EOF") || strings.Contains(msg, "connection reset") || strings.Contains(msg, "forcibly closed")
+}
+
 func (p *proxy) upstreamError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, context.Canceled) {
 		return // the page went away
 	}
 	pg := describeUpstreamError(err)
+	if strings.HasSuffix(strings.ToLower(r.URL.Path), ".jnlp") && droppedConnection(err) {
+		pg = page{
+			Tone:    "error",
+			Title:   "BMC 没有返回 Java 远程控制台",
+			Message: "BMC 在生成 Java 控制台启动文件时断开了连接（已自动重试）。",
+			Hints: []string{
+				"点“重新连接”再试一次；BMC 刚登录时偶尔会这样。",
+				"也可以打开该设备的 Web 管理，登录后点击 BMC 页面里的 Java 远程控制台按钮，同样会直接打开。",
+			},
+		}
+	}
 	pg.Target = p.target.Host
 	pg.Retry = p.startURL(p.target.String() + r.URL.RequestURI())
 	pg.Detail = fmt.Sprintf("%s %s\n%v", r.Method, r.URL.RequestURI(), err)
