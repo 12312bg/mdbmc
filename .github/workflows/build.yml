@@ -52,10 +52,7 @@ jobs:
       - name: Go test
         run: go test -race -count=1 ./...
 
-  # Every push runs the Windows tests. Installers and the portable zip are
-  # built only for v* tags (which the release job publishes) and when the
-  # workflow is run by hand (Actions -> build -> Run workflow) for packages
-  # to try out; the version is compiled in, so a tag gets its own build.
+  # Tests run on every push; packages are built only for v* tags and manual runs.
   windows:
     name: Windows
     runs-on: windows-latest
@@ -80,11 +77,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      # The program's version (and the installer's, which must be
-      # MAJOR.MINOR.PATCH) comes from the tag. Untagged builds count commits
-      # since the last tag as a pre-release of the next patch version
-      # (1.2.4-dev.5+<commit> after v1.2.3): newer than that release, older
-      # than the next, so the online update treats them correctly.
+      # From the tag; otherwise <next patch>-dev.<commits since tag>+<commit>.
       - name: Version
         id: version
         if: env.PACKAGE == 'true'
@@ -142,8 +135,7 @@ jobs:
           MDBMC_JAVA_HOME: ${{ github.workspace }}\build\jre
         run: go test -count=1 -v -run TestConsoleWindowSmoke ./internal/console/
 
-      # The update helper's Windows parts: waiting for the program's
-      # processes to exit, short path names.
+      # The update helper's Windows-only code.
       - name: Update helper tests
         run: go test -count=1 ./internal/update/
 
@@ -157,8 +149,7 @@ jobs:
           }
           "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      # UPDATE_PUBLIC_KEY verifies the signature of update manifests;
-      # without it the build can check for updates but never installs one.
+      # UPDATE_PUBLIC_KEY verifies update manifests.
       - name: Build application and installer
         if: env.PACKAGE == 'true'
         shell: bash
@@ -189,9 +180,7 @@ jobs:
             build/bin/*.zip
           if-no-files-found: error
 
-  # A v* tag publishes the build as a release of 12312bg/mdbmc-release, the
-  # channel the program's online update reads. Tags with a pre-release part
-  # (v1.2.0-beta.1) become pre-releases, which the program does not offer.
+  # v* tags are published to mdbmc-release; tags with "-" become pre-releases.
   release:
     name: Publish release
     runs-on: ubuntu-latest
@@ -215,7 +204,7 @@ jobs:
           name: mdbmc-windows-amd64-${{ needs.windows.outputs.version }}
           path: dist
 
-      # The annotated tag's message, or else the commits since the previous tag.
+      # Annotated tag message, else the commits since the previous tag.
       - name: Release notes
         run: |
           git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
@@ -265,7 +254,7 @@ jobs:
           } > body.md
           files=(dist/mdbmc-amd64-installer.exe dist/mdbmc-portable-windows-amd64.zip dist/latest.json dist/latest.json.sig dist/SHA256SUMS.txt)
           if gh release view "$TAG" --repo "$RELEASE_REPO" > /dev/null 2>&1; then
-            # A re-run replaces the files of the release created before.
+            # A re-run replaces the files.
             gh release upload "$TAG" "${files[@]}" --repo "$RELEASE_REPO" --clobber
           else
             flags=()
