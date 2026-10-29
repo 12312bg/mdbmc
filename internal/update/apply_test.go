@@ -24,15 +24,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// startCopy runs a copy of the test binary from dir as name; the returned
-// function (also run when the test ends) stops it.
-func startCopy(t *testing.T, dir, name string) (stop func()) {
+// startCopy runs a copy of the test binary from dir as name; stop (also run
+// when the test ends) ends it.
+func startCopy(t *testing.T, dir, name string) (cmd *exec.Cmd, stop func()) {
 	t.Helper()
 	exe := filepath.Join(dir, name)
 	if err := copyFile(os.Args[0], exe, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(exe)
+	cmd = exec.Command(exe)
 	cmd.Env = append(os.Environ(), sleepEnv+"=1")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -45,13 +45,13 @@ func startCopy(t *testing.T, dir, name string) (stop func()) {
 		})
 	}
 	t.Cleanup(stop)
-	return stop
+	return cmd, stop
 }
 
 func TestWaitDirFree(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "mdbmc.exe")
-	stop := startCopy(t, dir, "mdbmc.exe")
+	_, stop := startCopy(t, dir, "mdbmc.exe")
 	if err := waitDirFree(dir, exe, 500*time.Millisecond); err == nil || !strings.Contains(err.Error(), "mdbmc.exe") {
 		t.Fatalf("running program not detected: %v", err)
 	}

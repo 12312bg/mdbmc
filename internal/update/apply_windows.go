@@ -139,23 +139,15 @@ func processesIn(dir string) []string {
 		return nil
 	}
 	defer windows.CloseHandle(snap)
-	prefix := strings.ToLower(longPath(filepath.Clean(dir))) + `\`
+	prefix := normPath(dir) + `\`
 	self := uint32(os.Getpid())
 	var names []string
-	buf := make([]uint16, windows.MAX_LONG_PATH)
 	e := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
 	for err = windows.Process32First(snap, &e); err == nil; err = windows.Process32Next(snap, &e) {
 		if e.ProcessID == self {
 			continue
 		}
-		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, e.ProcessID)
-		if err != nil {
-			continue
-		}
-		n := uint32(len(buf))
-		err = windows.QueryFullProcessImageName(h, 0, &buf[0], &n)
-		windows.CloseHandle(h)
-		if err == nil && strings.HasPrefix(strings.ToLower(windows.UTF16ToString(buf[:n])), prefix) {
+		if p, err := imagePath(e.ProcessID); err == nil && strings.HasPrefix(normPath(p), prefix) {
 			names = append(names, windows.UTF16ToString(e.ExeFile[:]))
 		}
 	}
@@ -163,7 +155,39 @@ func processesIn(dir string) []string {
 	return slices.Compact(names)
 }
 
-// longPath expands 8.3 short names (C:\Users\RUNNER~1) so paths compare.
+// imagePath is the path of the program process pid runs.
+func imagePath(pid uint32) (string, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return "", err
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		n := uint32(len(buf))
+		err := windows.QueryFullProcessImageName(h, 0, &buf[0], &n)
+		if err == nil {
+			return windows.UTF16ToString(buf[:n]), nil
+		}
+		if err != windows.ERROR_INSUFFICIENT_BUFFER || len(buf) >= windows.MAX_LONG_PATH {
+			return "", err
+		}
+		buf = make([]uint16, windows.MAX_LONG_PATH)
+	}
+}
+
+// normPath makes paths comparable: 8.3 short names (C:\Users\RUNNER~1),
+// which both the folder and a process's image path may contain, are
+// expanded, and case is ignored.
+func normPath(p string) string {
+	p = filepath.Clean(p)
+	if strings.Contains(p, "~") {
+		p = longPath(p)
+	}
+	return strings.ToLower(p)
+}
+
+// longPath expands the short names in an existing path.
 func longPath(p string) string {
 	in, err := windows.UTF16PtrFromString(p)
 	if err != nil {
