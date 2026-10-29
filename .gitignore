@@ -1,4 +1,5 @@
 build/bin
+build/jre
 node_modules
 frontend/dist/*
 !frontend/dist/.gitkeep

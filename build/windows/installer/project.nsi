@@ -96,6 +96,13 @@ Section
 
     !insertmacro wails.files
 
+    # Java runtime for Java remote consoles (JNLP), used only by this program.
+    # CI unpacks it to build\jre; a build without it installs no runtime.
+    RMDir /r "$INSTDIR\jre"
+    SetOutPath "$INSTDIR\jre"
+    File /nonfatal /r "..\..\jre\*.*"
+    SetOutPath $INSTDIR
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
