@@ -38,6 +38,8 @@ type App struct {
 	auth    *auth.Manager
 	emit    Emitter
 	launch  console.Launcher
+	// closeConsoles closes the console windows (on logout).
+	closeConsoles func()
 
 	settingsMu sync.RWMutex
 	settings   Settings
@@ -64,6 +66,8 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 		emit:    func(string, any) {},
 		launch:  launcher,
 		devSems: map[int64]chan struct{}{},
+
+		closeConsoles: console.CloseAll,
 	}
 	if err := a.loadSettings(); err != nil {
 		st.Close()

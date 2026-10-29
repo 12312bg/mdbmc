@@ -1,11 +1,13 @@
 // Package console opens BMC web and KVM pages in separate WebView2 windows.
 //
 // Each window runs in a child process (the same executable started with
-// the --console flag) so that it can use its own browser profile and accept
-// the BMC's pinned self-signed certificate without affecting the main window. The
-// launch request, including the BMC password for auto-login, is passed over
-// the child's stdin and never appears on the command line. The child reports
-// back on stdout once its window is on screen, and on stderr if it fails.
+// the --console flag) so that it has its own browser profile and its own
+// local HTTPS proxy to the BMC (see proxy.go), without affecting the main
+// window. The launch request, including the BMC password for auto-login, is
+// passed over the child's stdin and never appears on the command line. The
+// child reports back on stdout once its window is on screen and with
+// diagnostic events afterwards (logged by the parent), and on stderr if it
+// fails.
 package console
 
 import (
@@ -17,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -58,18 +61,37 @@ type Request struct {
 type Launcher func(Request) error
 
 // ProcessLauncher starts a console window process and returns once its
-// window is visible, or with the child's error if it could not start.
+// window is visible, or with the child's error if it could not start. The
+// window's diagnostic events go to the log.
 func ProcessLauncher(req Request) error {
-	_, err := startWindow(req, readyTimeout)
+	_, err := startWindow(req, readyTimeout, func(ev string) {
+		log.Printf("console window %q: %s", req.Title, strings.ReplaceAll(ev, "\t", " "))
+	})
 	return err
 }
 
-// windowProc is a running console window process.
+// windowProc is a running console window process. Its stdin stays open
+// while the window should; closing it (or the main program exiting) makes
+// the window close.
 type windowProc struct {
-	cmd *exec.Cmd
-	// events receives "name\tdetail" lines reported by the page script.
-	events chan string
-	done   chan struct{}
+	cmd   *exec.Cmd
+	stdin io.Closer
+	done  chan struct{}
+}
+
+// The windows this process opened and that are still running.
+var (
+	openMu  sync.Mutex
+	openSet = map[*windowProc]bool{}
+)
+
+// CloseAll closes every console window this process opened.
+func CloseAll() {
+	openMu.Lock()
+	defer openMu.Unlock()
+	for p := range openSet {
+		_ = p.stdin.Close()
+	}
 }
 
 func (p *windowProc) kill() {
@@ -92,7 +114,9 @@ func childEnv(env []string) []string {
 	return out
 }
 
-func startWindow(req Request, timeout time.Duration) (*windowProc, error) {
+// startWindow starts a window process. onEvent receives the "name\tdetail"
+// events the window reports (page loaded, login submitted, errors).
+func startWindow(req Request, timeout time.Duration, onEvent func(string)) (*windowProc, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -114,18 +138,24 @@ func startWindow(req Request, timeout time.Duration) (*windowProc, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动控制台窗口失败: %w", err)
 	}
-	err = json.NewEncoder(stdin).Encode(req)
-	stdin.Close()
-	if err != nil {
+	if err := json.NewEncoder(stdin).Encode(req); err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		return nil, fmt.Errorf("向控制台窗口传递参数失败: %w", err)
 	}
 
-	p := &windowProc{cmd: cmd, events: make(chan string, 64), done: make(chan struct{})}
+	p := &windowProc{cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	openMu.Lock()
+	openSet[p] = true
+	openMu.Unlock()
 	ready := make(chan error, 1)
 	go func() {
 		defer close(p.done)
+		defer func() {
+			openMu.Lock()
+			delete(openSet, p)
+			openMu.Unlock()
+		}()
 		gotReady := false
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
@@ -134,11 +164,8 @@ func startWindow(req Request, timeout time.Duration) (*windowProc, error) {
 			case !gotReady && line == readyLine:
 				gotReady = true
 				ready <- nil
-			case strings.HasPrefix(line, eventPrefix):
-				select {
-				case p.events <- strings.TrimPrefix(line, eventPrefix):
-				default:
-				}
+			case strings.HasPrefix(line, eventPrefix) && onEvent != nil:
+				onEvent(strings.TrimPrefix(line, eventPrefix))
 			}
 		}
 		waitErr := cmd.Wait()
@@ -192,6 +219,22 @@ func (b *tailBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// stdoutMu serializes the lines a window process writes to its parent; the
+// proxy reports from its own goroutines.
+var stdoutMu sync.Mutex
+
+func writeLine(line string) {
+	stdoutMu.Lock()
+	defer stdoutMu.Unlock()
+	fmt.Println(line)
+}
+
+// reportEvent sends a diagnostic event to the parent process.
+func reportEvent(name, detail string) {
+	detail = strings.NewReplacer("\r", " ", "\n", " ").Replace(detail)
+	writeLine(eventPrefix + name + "\t" + detail)
 }
 
 //go:embed autologin.js

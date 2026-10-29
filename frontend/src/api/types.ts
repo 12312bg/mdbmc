@@ -390,7 +390,10 @@ export interface Api {
     status(): Promise<AuthStatus>
     setup(username: string, displayName: string, password: string): Promise<UserInfo>
     login(username: string, password: string): Promise<UserInfo>
+    /** Ends the session and closes the console windows. */
     logout(): Promise<void>
+    /** Idle lock: ends the session but keeps the console windows open. */
+    lock(): Promise<void>
     changePassword(oldPassword: string, newPassword: string): Promise<void>
   }
   admin: {

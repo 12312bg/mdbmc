@@ -72,7 +72,8 @@ watch(forced, async (now, before) => {
   }
 })
 
-// Idle lock: logs out (wiping the vault key) after inactivity.
+// Idle lock: ends the session (wiping the vault key) after inactivity;
+// console windows stay open.
 let idleTimer: number | undefined
 let lastActivity = Date.now()
 function bump() {
@@ -84,7 +85,7 @@ onMounted(async () => {
   idleTimer = window.setInterval(() => {
     const mins = session.settings?.idleLockMinutes ?? 0
     if (mins > 0 && Date.now() - lastActivity > mins * 60_000) {
-      void session.logout(`已因 ${mins} 分钟未操作自动锁定，请重新登录`)
+      void session.lock(`已因 ${mins} 分钟未操作自动锁定，请重新登录`)
     }
   }, 15_000)
   devices.subscribe()

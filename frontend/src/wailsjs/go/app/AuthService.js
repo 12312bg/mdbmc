@@ -6,6 +6,10 @@ export function ChangePassword(arg1, arg2) {
   return window['go']['app']['AuthService']['ChangePassword'](arg1, arg2);
 }
 
+export function Lock() {
+  return window['go']['app']['AuthService']['Lock']();
+}
+
 export function Login(arg1, arg2) {
   return window['go']['app']['AuthService']['Login'](arg1, arg2);
 }

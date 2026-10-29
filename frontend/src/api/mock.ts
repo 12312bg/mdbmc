@@ -218,6 +218,10 @@ export const mockApi: Api = {
       if (current) log('auth.logout', current.username)
       current = null
     },
+    async lock() {
+      if (current) log('auth.lock', current.username)
+      current = null
+    },
     async changePassword(_o, n) {
       await wait()
       if (n.length < 8) throw new Error('密码长度至少 8 位')

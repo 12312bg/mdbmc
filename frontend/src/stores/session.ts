@@ -39,11 +39,22 @@ export const useSession = defineStore('session', () => {
     await refresh()
   }
 
-  async function logout(reason = '') {
-    await api.auth.logout()
+  function signedOut(reason: string) {
     lockedReason.value = reason
     user.value = null
     if (status.value) status.value.user = null
+  }
+
+  // Logging out also closes the Web/KVM console windows.
+  async function logout(reason = '') {
+    await api.auth.logout()
+    signedOut(reason)
+  }
+
+  // The idle lock keeps console windows open (long KVM tasks).
+  async function lock(reason: string) {
+    await api.auth.lock()
+    signedOut(reason)
   }
 
   async function changePassword(oldPassword: string, newPassword: string) {
@@ -51,5 +62,5 @@ export const useSession = defineStore('session', () => {
     if (user.value) user.value = { ...user.value, mustChangePassword: false }
   }
 
-  return { status, user, settings, lockedReason, loggedIn, refresh, loadSettings, can, login, setup, logout, changePassword }
+  return { status, user, settings, lockedReason, loggedIn, refresh, loadSettings, can, login, setup, logout, lock, changePassword }
 })

@@ -8,11 +8,19 @@ import (
 	"github.com/12312bg/mdbmc/internal/bmc"
 )
 
+// testHelpers are extra roles of the test binary, chosen by its first
+// argument (see TestMain).
+var testHelpers = map[string]func(){}
+
 // TestMain lets the test binary act as the console window process, the way
-// the real executable does when started with Flag.
+// the real executable does when started with Flag, or as a test helper.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == Flag {
 		RunWindow()
+		return
+	}
+	if len(os.Args) > 1 && testHelpers[os.Args[1]] != nil {
+		testHelpers[os.Args[1]]()
 		return
 	}
 	os.Exit(m.Run())

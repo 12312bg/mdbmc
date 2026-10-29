@@ -6,9 +6,11 @@ package bmcsim
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -52,6 +54,9 @@ type Options struct {
 	// DisableRedfish / DisableIPMI simulate single-protocol BMCs.
 	DisableRedfish bool
 	DisableIPMI    bool
+	// LegacyTLS limits HTTPS to TLS 1.0 with RSA key exchange, like old BMC
+	// firmware that current browsers (and WebView2) refuse to talk to.
+	LegacyTLS bool
 }
 
 // Sim is a running simulator.
@@ -178,9 +183,16 @@ func (s *Sim) startIPMI(ctx context.Context) error {
 }
 
 func (s *Sim) startHTTPS() error {
-	cert, err := loadOrCreateCert(s.opt.CertFile)
+	cert, err := loadOrCreateCert(s.opt.CertFile, s.opt.LegacyTLS)
 	if err != nil {
 		return err
+	}
+	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
+	if s.opt.LegacyTLS {
+		tlsConfig.MinVersion = tls.VersionTLS10
+		tlsConfig.MaxVersion = tls.VersionTLS10
+		tlsConfig.CipherSuites = []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA, tls.TLS_RSA_WITH_AES_256_CBC_SHA}
+		tlsConfig.NextProtos = []string{"http/1.1"} // HTTP/2 needs TLS 1.2
 	}
 	sum := sha256.Sum256(cert.Certificate[0])
 	s.Fingerprint = hex.EncodeToString(sum[:])
@@ -192,7 +204,8 @@ func (s *Sim) startHTTPS() error {
 	s.HTTPSPort = ln.Addr().(*net.TCPAddr).Port
 	s.httpSrv = &http.Server{
 		Handler:           s.routes(),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}},
+		TLSConfig:         tlsConfig,
+		TLSNextProto:      map[string]func(*http.Server, *tls.Conn, http.Handler){},
 		ReadHeaderTimeout: 10 * time.Second,
 		ErrorLog:          log.New(io.Discard, "", 0),
 	}
@@ -206,15 +219,25 @@ func (s *Sim) startHTTPS() error {
 	return nil
 }
 
-func loadOrCreateCert(path string) (tls.Certificate, error) {
+// loadOrCreateCert returns the simulator's certificate, with an RSA key
+// when rsaKey is set (RSA key exchange needs one), else ECDSA.
+func loadOrCreateCert(path string, rsaKey bool) (tls.Certificate, error) {
 	if path != "" {
 		if b, err := os.ReadFile(path); err == nil {
 			if c, err := tls.X509KeyPair(b, b); err == nil {
-				return c, nil
+				if _, isRSA := c.PrivateKey.(*rsa.PrivateKey); isRSA == rsaKey {
+					return c, nil
+				}
 			}
 		}
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	var key crypto.Signer
+	var err error
+	if rsaKey {
+		key, err = rsa.GenerateKey(rand.Reader, 2048)
+	} else {
+		key, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	}
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -228,16 +251,19 @@ func loadOrCreateCert(path string) (tls.Certificate, error) {
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if rsaKey {
+		tmpl.KeyUsage |= x509.KeyUsageKeyEncipherment
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
 	pemBytes := append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})...)
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})...)
 	if path != "" {
 		_ = os.WriteFile(path, pemBytes, 0o600)
 	}

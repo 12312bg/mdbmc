@@ -56,6 +56,7 @@ export const auditActionLabel: Record<string, string> = {
   'auth.login': '登录',
   'auth.login_failed': '登录失败',
   'auth.logout': '退出登录',
+  'auth.lock': '空闲锁定',
   'auth.password_change': '修改密码',
   'user.create': '创建用户',
   'user.update': '修改用户',
