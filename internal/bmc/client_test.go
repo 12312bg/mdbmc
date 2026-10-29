@@ -173,6 +173,29 @@ func TestInventory(t *testing.T) {
 	if len(inv.FRU) == 0 || inv.FRU[0].BoardProduct != "X12DPU-6" {
 		t.Fatalf("fru = %+v", inv.FRU)
 	}
+	if len(inv.Errors) != 0 {
+		t.Fatalf("errors = %v", inv.Errors)
+	}
+}
+
+// Errors belong to the sections they affect: without Redfish, the Redfish
+// sections say why they are empty and the IPMI FRU is still there.
+func TestInventoryErrorsPerSection(t *testing.T) {
+	sim := startSim(t, bmcsim.Options{DisableRedfish: true})
+	c := bmc.New(target(sim, bmc.ProtocolAuto))
+	defer c.Close()
+	inv, err := c.Inventory(ctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"system", "manager", "processors", "memory", "drives", "nics", "powerSupplies", "firmware"} {
+		if !strings.Contains(inv.Errors[s], "Redfish") {
+			t.Errorf("section %s: error %q", s, inv.Errors[s])
+		}
+	}
+	if inv.Errors["fru"] != "" || len(inv.FRU) == 0 || inv.Source != bmc.ProtocolIPMI {
+		t.Fatalf("fru %v, error %q, source %s", inv.FRU, inv.Errors["fru"], inv.Source)
+	}
 }
 
 func TestAuthFailureAndPinning(t *testing.T) {

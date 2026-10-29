@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { NButton, NIcon, NAlert, NSkeleton, NDescriptions, NDescriptionsItem, NTable, NCollapse, NCollapseItem } from 'naive-ui'
-import { RefreshOutline, HardwareChipOutline, LayersOutline, ServerOutline, GitNetworkOutline, FlashOutline, CodeSlashOutline } from '@vicons/ionicons5'
+import { computed, h, onMounted, ref, type FunctionalComponent } from 'vue'
+import { NButton, NIcon, NAlert, NSkeleton, NDescriptions, NDescriptionsItem, NTable, NCollapse, NCollapseItem, NTooltip } from 'naive-ui'
+import { RefreshOutline, HardwareChipOutline, LayersOutline, ServerOutline, GitNetworkOutline, FlashOutline, CodeSlashOutline, Warning } from '@vicons/ionicons5'
 import { api, errMsg, type InventoryResult } from '@/api'
 import { formatBytes, formatTime, relativeTime } from '@/utils/format'
 import StatusBadges from '@/components/StatusBadges.vue'
@@ -25,18 +25,30 @@ async function load(refresh = false) {
 onMounted(() => load(false))
 
 const inv = computed(() => result.value?.inventory)
+// Why a section could not be read, shown on that section only.
+const errs = computed<Record<string, string>>(() => inv.value?.errors ?? {})
+const infoError = computed(() => [errs.value.system, errs.value.manager].filter(Boolean).join('\n'))
+
+// A warning sign whose tooltip carries the error.
+const WarnTip: FunctionalComponent<{ msg?: string }> = (p) =>
+  p.msg
+    ? h(NTooltip, { style: 'max-width: 420px; white-space: pre-line' }, {
+        trigger: () => h(NIcon, { component: Warning, size: 16, color: 'var(--status-warning)', style: 'cursor: help; display: block' }),
+        default: () => p.msg,
+      })
+    : null
 const memTotal = computed(() => (inv.value?.memory ?? []).reduce((s, m) => s + m.capacityMiB, 0) / 1024)
 const health = (h: string) => (h === 'ok' || h === 'warning' || h === 'critical' ? h : 'unknown') as 'ok' | 'warning' | 'critical' | 'unknown'
 const summary = computed(() => {
   const i = inv.value
   if (!i) return []
   return [
-    { icon: HardwareChipOutline, label: '处理器', value: i.system.processorCount ? `${i.system.processorCount} 颗 · ${i.system.coreCount} 核 / ${i.system.threadCount} 线程` : `${i.processors?.length ?? 0} 颗` },
-    { icon: LayersOutline, label: '内存', value: `${i.system.memoryGiB || memTotal.value} GiB · ${i.memory?.length ?? 0} 条` },
-    { icon: ServerOutline, label: '磁盘', value: `${i.drives?.length ?? 0} 块 · ${formatBytes((i.drives ?? []).reduce((s, d) => s + d.capacityBytes, 0))}` },
-    { icon: GitNetworkOutline, label: '网卡', value: `${i.nics?.length ?? 0} 个接口` },
-    { icon: FlashOutline, label: '电源', value: `${i.powerSupplies?.length ?? 0} 个` },
-    { icon: CodeSlashOutline, label: '固件', value: `${i.firmware?.length ?? 0} 项` },
+    { key: 'processors', icon: HardwareChipOutline, label: '处理器', value: i.system.processorCount ? `${i.system.processorCount} 颗 · ${i.system.coreCount} 核 / ${i.system.threadCount} 线程` : `${i.processors?.length ?? 0} 颗` },
+    { key: 'memory', icon: LayersOutline, label: '内存', value: `${i.system.memoryGiB || memTotal.value} GiB · ${i.memory?.length ?? 0} 条` },
+    { key: 'drives', icon: ServerOutline, label: '磁盘', value: `${i.drives?.length ?? 0} 块 · ${formatBytes((i.drives ?? []).reduce((s, d) => s + d.capacityBytes, 0))}` },
+    { key: 'nics', icon: GitNetworkOutline, label: '网卡', value: `${i.nics?.length ?? 0} 个接口` },
+    { key: 'powerSupplies', icon: FlashOutline, label: '电源', value: `${i.powerSupplies?.length ?? 0} 个` },
+    { key: 'firmware', icon: CodeSlashOutline, label: '固件', value: `${i.firmware?.length ?? 0} 项` },
   ]
 })
 </script>
@@ -57,11 +69,9 @@ const summary = computed(() => {
     <n-alert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</n-alert>
     <n-skeleton v-if="loading && !inv" text :repeat="8" />
     <template v-if="inv">
-      <n-alert v-if="inv.warnings?.length" type="warning" :bordered="false" style="margin-bottom: 12px" title="部分信息未能读取">
-        <div v-for="w in inv.warnings" :key="w" style="font-size: 12.5px">{{ w }}</div>
-      </n-alert>
       <div class="summary">
         <div v-for="s in summary" :key="s.label" class="sum-item">
+          <span v-if="errs[s.key]" class="corner"><WarnTip :msg="errs[s.key]" /></span>
           <n-icon :component="s.icon" :size="20" class="sum-icon" />
           <div>
             <div class="muted" style="font-size: 12px">{{ s.label }}</div>
@@ -70,6 +80,8 @@ const summary = computed(() => {
         </div>
       </div>
 
+      <div class="info">
+      <span v-if="infoError" class="corner"><WarnTip :msg="infoError" /></span>
       <n-descriptions label-placement="left" :column="3" size="small" bordered class="block">
         <n-descriptions-item label="制造商">{{ inv.system.manufacturer || '—' }}</n-descriptions-item>
         <n-descriptions-item label="型号">{{ inv.system.model || '—' }}</n-descriptions-item>
@@ -80,9 +92,11 @@ const summary = computed(() => {
         <n-descriptions-item label="主机名">{{ inv.system.hostName || '—' }}</n-descriptions-item>
         <n-descriptions-item label="UUID" :span="2"><span class="mono">{{ inv.system.uuid || '—' }}</span></n-descriptions-item>
       </n-descriptions>
+      </div>
 
-      <n-collapse :default-expanded-names="['cpu', 'mem', 'disk', 'nic', 'psu', 'fw']" class="block">
+      <n-collapse :default-expanded-names="['cpu', 'mem', 'disk', 'nic', 'psu', 'fw', 'fru']" class="block">
         <n-collapse-item v-if="inv.processors?.length" :title="`处理器（${inv.processors.length}）`" name="cpu">
+          <template #header-extra><WarnTip :msg="errs.processors" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>插槽</th><th>型号</th><th>核心 / 线程</th><th>最高频率</th><th>健康</th></tr></thead>
             <tbody>
@@ -94,6 +108,7 @@ const summary = computed(() => {
           </n-table>
         </n-collapse-item>
         <n-collapse-item v-if="inv.memory?.length" :title="`内存（${inv.memory.length} 条 · ${memTotal} GiB）`" name="mem">
+          <template #header-extra><WarnTip :msg="errs.memory" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>插槽</th><th>容量</th><th>类型</th><th>频率</th><th>厂商</th><th>料号</th><th>序列号</th><th>健康</th></tr></thead>
             <tbody>
@@ -105,6 +120,7 @@ const summary = computed(() => {
           </n-table>
         </n-collapse-item>
         <n-collapse-item v-if="inv.drives?.length" :title="`磁盘（${inv.drives.length}）`" name="disk">
+          <template #header-extra><WarnTip :msg="errs.drives" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>名称</th><th>型号</th><th>容量</th><th>介质 / 接口</th><th>固件</th><th>序列号</th><th>健康</th></tr></thead>
             <tbody>
@@ -116,6 +132,7 @@ const summary = computed(() => {
           </n-table>
         </n-collapse-item>
         <n-collapse-item v-if="inv.nics?.length" :title="`网卡（${inv.nics.length}）`" name="nic">
+          <template #header-extra><WarnTip :msg="errs.nics" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>名称</th><th>MAC</th><th>速率</th><th>链路</th><th>IPv4</th></tr></thead>
             <tbody>
@@ -128,6 +145,7 @@ const summary = computed(() => {
           </n-table>
         </n-collapse-item>
         <n-collapse-item v-if="inv.powerSupplies?.length" :title="`电源（${inv.powerSupplies.length}）`" name="psu">
+          <template #header-extra><WarnTip :msg="errs.powerSupplies" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>名称</th><th>型号</th><th>额定功率</th><th>固件</th><th>序列号</th><th>健康</th></tr></thead>
             <tbody>
@@ -139,6 +157,7 @@ const summary = computed(() => {
           </n-table>
         </n-collapse-item>
         <n-collapse-item v-if="inv.firmware?.length" :title="`固件版本（${inv.firmware.length}）`" name="fw">
+          <template #header-extra><WarnTip :msg="errs.firmware" /></template>
           <n-table size="small" :bordered="false" striped>
             <thead><tr><th>组件</th><th>版本</th><th>可升级</th></tr></thead>
             <tbody>
@@ -146,8 +165,10 @@ const summary = computed(() => {
             </tbody>
           </n-table>
         </n-collapse-item>
-        <n-collapse-item v-if="inv.fru?.length" :title="`IPMI FRU（${inv.fru.length}）`" name="fru">
-          <n-table size="small" :bordered="false" striped>
+        <n-collapse-item v-if="inv.fru?.length || errs.fru" :title="`IPMI FRU（${inv.fru?.length ?? 0}）`" name="fru">
+          <template #header-extra><WarnTip :msg="errs.fru" /></template>
+          <div v-if="!inv.fru?.length" class="muted" style="font-size: 13px">未能读取</div>
+          <n-table v-else size="small" :bordered="false" striped>
             <thead><tr><th>FRU 设备</th><th>主板</th><th>主板序列号</th><th>产品</th><th>产品序列号</th><th>机箱序列号</th></tr></thead>
             <tbody>
               <tr v-for="f in inv.fru" :key="f.device">
@@ -176,6 +197,7 @@ const summary = computed(() => {
   margin-bottom: 16px;
 }
 .sum-item {
+  position: relative;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -198,6 +220,20 @@ const summary = computed(() => {
 }
 .block {
   margin-bottom: 16px;
+}
+.info {
+  position: relative;
+}
+/* A warning badge on the item's top-right corner. */
+.corner {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  z-index: 1;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--surface);
+  line-height: 0;
 }
 @media (max-width: 1300px) {
   .summary {

@@ -187,8 +187,21 @@ function inventoryFor(d: Device): Inventory {
     powerSupplies: [1, 2].map((n) => ({ name: 'PS' + n, model: 'PWS-1K02A-1R', serial: `P1K02AL0${d.id}${n}`, capacityWatts: 1000, firmware: '1.2', health: n === 2 && d.health === 'critical' ? 'critical' : 'ok' })),
     firmware: [{ name: 'BMC Firmware', version: d.bmcFirmware, updateable: true }, { name: 'BIOS Firmware', version: d.biosVersion, updateable: true }],
     fru: [{ device: 'Builtin FRU Device (ID 0)', chassisPart: 'CSE-819UTS-R1K02P-T', chassisSerial: 'C8190' + d.serial, boardMfg: d.manufacturer, boardProduct: 'X12DPU-6', boardSerial: 'WM23AS' + d.id, boardPart: 'X12DPU-6', productMfg: d.manufacturer, productName: d.model, productPart: d.model, productVersion: '0123456789', productSerial: d.serial }],
-    source: 'redfish', collectedAt: now(), warnings: null,
+    source: 'redfish', collectedAt: now(),
+    ...mockInventoryErrors(d),
   }
+}
+
+// Some preview devices show how unreadable sections look.
+function mockInventoryErrors(d: Device): Partial<Inventory> {
+  if (d.vendor === 'inspur') {
+    return {
+      powerSupplies: [], firmware: [],
+      errors: { powerSupplies: 'Redfish 读取电源失败: HTTP 404 Not Found', firmware: 'Redfish 读取固件清单失败: HTTP 404 Not Found' },
+    }
+  }
+  if (d.vendor === 'huawei') return { errors: { drives: 'Redfish 读取磁盘失败: RAID 控制器 RAIDStorage1 响应超时', manager: 'Redfish 读取BMC 信息失败: HTTP 500' } }
+  return {}
 }
 const inventoryCache = new Map<number, { inv: Inventory; ts: number }>()
 

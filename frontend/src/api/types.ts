@@ -277,7 +277,8 @@ export interface Inventory {
   }[] | null
   source: string
   collectedAt: number
-  warnings: string[] | null
+  /** Why a section could not be read, keyed by section (processors, memory, …, fru). */
+  errors?: Record<string, string> | null
 }
 
 export interface InventoryResult {

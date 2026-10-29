@@ -356,6 +356,7 @@ func (c *Client) Inventory(ctx context.Context) (*Inventory, error) {
 			errs = append(errs, friendly(ProtocolRedfish, err))
 		}
 	}
+	rfErrs := len(errs)
 	if c.allowed(ProtocolIPMI) {
 		if ip, err := c.ipmi(ctx); err == nil {
 			if fru, err := ip.fru(ctx); err == nil {
@@ -376,8 +377,15 @@ func (c *Client) Inventory(ctx context.Context) (*Inventory, error) {
 		}
 		return nil, ErrNotSupported
 	}
-	for _, e := range errs {
-		inv.Warnings = append(inv.Warnings, e.Error())
+	// The failed protocol's sections say why they are empty.
+	for i, e := range errs {
+		if i < rfErrs {
+			for _, s := range redfishSections {
+				inv.fail(s, e.Error())
+			}
+		} else {
+			inv.fail("fru", e.Error())
+		}
 	}
 	return inv, nil
 }
