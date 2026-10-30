@@ -17,8 +17,7 @@ const points = [
   <div class="auth">
     <aside class="hero">
       <div class="hero-top">
-        <!-- The wordmark's dark lettering needs a light plate on the dark hero. -->
-        <span class="hero-logo"><img :src="wordmark" alt="明点信科" draggable="false" /></span>
+        <img class="hero-logo" :src="wordmark" alt="明点信科" draggable="false" />
       </div>
       <div class="hero-body">
         <h1>明点服务器管理系统</h1>
@@ -76,16 +75,11 @@ const points = [
   align-items: center;
 }
 .hero-logo {
-  display: inline-flex;
-  padding: 9px 14px;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-}
-.hero-logo img {
   display: block;
-  height: 40px;
+  height: 44px;
   width: auto;
+  /* All-white on the blue hero, keeping the logo's shape. */
+  filter: brightness(0) invert(1);
 }
 .hero-body {
   margin-top: 12vh;
