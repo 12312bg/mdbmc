@@ -389,7 +389,6 @@ export interface UpdateRelease {
   notes: string
   /** Package size for this install mode; 0 when the release has none. */
   size: number
-  url: string
 }
 
 export interface UpdateResult {
@@ -418,7 +417,6 @@ export interface UpdateConfig {
   checkHours: number
   source: string
   proxy: string
-  defaultSource: string
 }
 
 export interface EventMap {

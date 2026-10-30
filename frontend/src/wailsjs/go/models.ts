@@ -701,7 +701,6 @@ export namespace app {
 	    checkHours: number;
 	    source: string;
 	    proxy: string;
-	    defaultSource: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateConfig(source);
@@ -712,7 +711,6 @@ export namespace app {
 	        this.checkHours = source["checkHours"];
 	        this.source = source["source"];
 	        this.proxy = source["proxy"];
-	        this.defaultSource = source["defaultSource"];
 	    }
 	}
 	export class UpdateRelease {
@@ -721,7 +719,6 @@ export namespace app {
 	    publishedAt: number;
 	    notes: string;
 	    size: number;
-	    url: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateRelease(source);
@@ -734,7 +731,6 @@ export namespace app {
 	        this.publishedAt = source["publishedAt"];
 	        this.notes = source["notes"];
 	        this.size = source["size"];
-	        this.url = source["url"];
 	    }
 	}
 	export class UpdateResult {

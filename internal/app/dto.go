@@ -367,7 +367,6 @@ type UpdateRelease struct {
 	PublishedAt int64  `json:"publishedAt"`
 	Notes       string `json:"notes"`
 	Size        int64  `json:"size"` // of the package for this install mode, 0 when there is none
-	URL         string `json:"url"`  // release page
 }
 
 // UpdateResult is the outcome of an installed update.
@@ -381,8 +380,7 @@ type UpdateResult struct {
 
 // UpdateConfig is where updates come from; administrators only.
 type UpdateConfig struct {
-	CheckHours    int    `json:"checkHours"`    // automatic check interval, 0 disables
-	Source        string `json:"source"`        // "" for the default (GitHub)
-	Proxy         string `json:"proxy"`         // "" for the system proxy
-	DefaultSource string `json:"defaultSource"` // read-only
+	CheckHours int    `json:"checkHours"` // automatic check interval, 0 disables
+	Source     string `json:"source"`     // "" for the default (GitHub)
+	Proxy      string `json:"proxy"`      // "" for the system proxy
 }

@@ -63,12 +63,6 @@ func assetURL(source, tag, name string) string {
 	return sourceOrDefault(source) + "/download/" + url.PathEscape(tag) + "/" + url.PathEscape(name)
 }
 
-// ReleaseURL is the page of a release on the source (GitHub's release page
-// for the default source).
-func ReleaseURL(source, tag string) string {
-	return sourceOrDefault(source) + "/tag/" + url.PathEscape(tag)
-}
-
 // newHTTPClient returns a client that uses proxy if set, and otherwise the
 // HTTPS_PROXY / HTTP_PROXY variables or the system proxy settings.
 func newHTTPClient(proxy string) (*http.Client, error) {

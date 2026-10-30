@@ -118,7 +118,7 @@ func (a *App) updateStatus() UpdateStatus {
 	if m := st.Latest; m != nil {
 		out.Latest = &UpdateRelease{
 			Version: m.Version, Tag: m.Tag, PublishedAt: m.PublishedAt.Unix(), Notes: m.Notes,
-			Size: m.Assets[mode].Size, URL: update.ReleaseURL(a.updater.Config().Source, m.Tag),
+			Size: m.Assets[mode].Size,
 		}
 	}
 	a.updateMu.Lock()
@@ -289,7 +289,6 @@ func (s *UpdateService) GetConfig() (*UpdateConfig, error) {
 		return nil, err
 	}
 	c := s.a.updateConfig()
-	c.DefaultSource = update.DefaultSource
 	return &c, nil
 }
 

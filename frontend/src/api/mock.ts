@@ -140,7 +140,7 @@ let upd: UpdateStatus = {
     : updParam === 'failed' ? { from: '0.1.0-preview', version: '0.2.0', success: false, error: '没有获得管理员授权（UAC 已取消）', time: now() }
     : null,
 }
-let updConfig = { checkHours: 24, source: '', proxy: '', defaultSource: 'https://github.com/12312bg/mdbmc-release/releases' }
+let updConfig = { checkHours: 24, source: '', proxy: '' }
 let updTimer: number | undefined
 let autoChecked = false
 function setUpd(p: Partial<UpdateStatus>) {
@@ -161,7 +161,7 @@ async function mockCheck() {
   }
   setUpd({
     state: ready ? 'ready' : 'available', checkedAt: now(),
-    latest: { version: '0.2.0', tag: 'v0.2.0', publishedAt: now() - 86400 * 2, notes: mockNotes, size: upd.mode === 'portable' ? 46_734_811 : 44_902_376, url: 'https://github.com/12312bg/mdbmc-release/releases/tag/v0.2.0' },
+    latest: { version: '0.2.0', tag: 'v0.2.0', publishedAt: now() - 86400 * 2, notes: mockNotes, size: upd.mode === 'portable' ? 46_734_811 : 44_902_376 },
   })
 }
 
@@ -569,7 +569,7 @@ export const mockApi: Api = {
       need('system.update'); await wait()
       if (c.checkHours < 0 || c.checkHours > 720) throw new Error('自动检查间隔需在 0 到 720 小时之间')
       if (c.source && !/^https?:\/\/[^/?#]+/.test(c.source.trim())) throw new Error('更新源需为 http:// 或 https:// 开头的地址，且不带查询参数')
-      updConfig = { ...c, source: c.source.trim().replace(/\/+$/, ''), proxy: c.proxy.trim(), defaultSource: updConfig.defaultSource }
+      updConfig = { ...c, source: c.source.trim().replace(/\/+$/, ''), proxy: c.proxy.trim() }
       log('update.config', '', true, `自动检查间隔 ${c.checkHours} 小时`)
     },
   },

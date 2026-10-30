@@ -61,7 +61,7 @@ func TestUpdateServicePermissionsAndCheck(t *testing.T) {
 	must(t, upd.SaveConfig(UpdateConfig{CheckHours: 6, Source: srv.URL + "/releases/", Proxy: "10.0.0.1:3128"}))
 	cfg, err := upd.GetConfig()
 	must(t, err)
-	if cfg.CheckHours != 6 || cfg.Source != srv.URL+"/releases" || cfg.Proxy != "http://10.0.0.1:3128" || cfg.DefaultSource != update.DefaultSource {
+	if cfg.CheckHours != 6 || cfg.Source != srv.URL+"/releases" || cfg.Proxy != "http://10.0.0.1:3128" {
 		t.Fatalf("config %+v", cfg)
 	}
 	if c, _ := h.app.loadUpdateConfig(); c.CheckHours != 6 || c.Proxy != "http://10.0.0.1:3128" {
@@ -79,8 +79,8 @@ func TestUpdateServicePermissionsAndCheck(t *testing.T) {
 	if st.State != "available" || st.Latest == nil || st.Latest.Version != "99.0.0" || !strings.Contains(st.Latest.Notes, "在线更新") {
 		t.Fatalf("status %+v", st)
 	}
-	if st.Latest.URL != srv.URL+"/releases/tag/v99.0.0" || st.CurrentVersion != Version {
-		t.Fatalf("release %+v", st.Latest)
+	if st.CurrentVersion != Version {
+		t.Fatalf("current version %q", st.CurrentVersion)
 	}
 	for name, call := range map[string]func() error{
 		"download": upd.Download,

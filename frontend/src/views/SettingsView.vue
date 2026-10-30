@@ -145,7 +145,7 @@ async function save() {
             </n-form-item>
             <n-form-item label="更新源">
               <div class="field">
-                <n-input v-model:value="updForm.source" :placeholder="updForm.defaultSource" clearable />
+                <n-input v-model:value="updForm.source" clearable />
               </div>
             </n-form-item>
             <n-form-item label="代理">
