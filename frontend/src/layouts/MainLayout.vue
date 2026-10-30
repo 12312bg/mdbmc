@@ -8,22 +8,25 @@ import {
 import {
   SpeedometerOutline, ServerOutline, ScanOutline, KeyOutline, PeopleOutline, DocumentTextOutline, SettingsOutline,
   MoonOutline, SunnyOutline, ContrastOutline, LogOutOutline, LockClosedOutline, ChevronDown, RefreshOutline,
-  CheckmarkCircle,
+  CheckmarkCircle, NotificationsOutline, HardwareChipOutline,
 } from '@vicons/ionicons5'
 import AppLogo from '@/components/AppLogo.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import UpdateDialog from '@/components/UpdateDialog.vue'
+import AlertBell from '@/components/AlertBell.vue'
 import { api, type Permission } from '@/api'
 import { useSession } from '@/stores/session'
 import { useTheme } from '@/stores/theme'
 import { useDevices } from '@/stores/devices'
 import { useUpdate } from '@/stores/update'
+import { useAlerts } from '@/stores/alerts'
 import { relativeTime } from '@/utils/format'
 
 const session = useSession()
 const theme = useTheme()
 const devices = useDevices()
 const upd = useUpdate()
+const alerts = useAlerts()
 const notification = useNotification()
 const route = useRoute()
 const router = useRouter()
@@ -32,13 +35,26 @@ const collapsed = ref(false)
 const showPassword = ref(false)
 
 const icon = (c: Component) => () => h(NIcon, null, { default: () => h(c) })
-const item = (key: string, label: string, ic: Component, perm?: Permission): MenuOption | null =>
-  perm && !session.can(perm) ? null : { key, icon: icon(ic), label: () => h(RouterLink, { to: `/${key}` }, { default: () => label }) }
+const item = (key: string, label: string, ic: Component, perm?: Permission, count?: () => number): MenuOption | null =>
+  perm && !session.can(perm)
+    ? null
+    : {
+        key,
+        icon: icon(ic),
+        label: () => {
+          const n = count?.() ?? 0
+          return h(RouterLink, { to: `/${key}`, class: 'menu-link' }, {
+            default: () => [label, n > 0 ? h('span', { class: 'menu-count' }, n > 99 ? '99+' : String(n)) : null],
+          })
+        },
+      }
 
 const menu = computed(() =>
   [
     item('dashboard', '总览', SpeedometerOutline),
     item('devices', '设备', ServerOutline),
+    item('inbox', '告警信箱', NotificationsOutline, 'device.view', () => alerts.unread),
+    item('firmware', '固件版本', HardwareChipOutline, 'device.view'),
     item('discovery', '扫描发现', ScanOutline, 'device.manage'),
     item('credentials', '凭据', KeyOutline),
     { type: 'divider', key: 'd1' } as MenuOption,
@@ -72,7 +88,7 @@ const forced = computed(() => !!session.user?.mustChangePassword)
 const viewKey = ref(0)
 watch(forced, async (now, before) => {
   if (before && !now) {
-    await Promise.all([session.loadSettings(), devices.load(), loadUpdate()])
+    await Promise.all([session.loadSettings(), devices.load(), loadUpdate(), alerts.load()])
     viewKey.value++
   }
 })
@@ -109,8 +125,10 @@ onMounted(async () => {
   }, 15_000)
   devices.subscribe()
   upd.subscribe()
+  alerts.subscribe()
   if (forced.value) return
   void loadUpdate()
+  void alerts.load()
   await devices.load()
   try {
     const ov = await api.bmc.overview()
@@ -194,6 +212,7 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
               <span>新版本 v{{ upd.latest.version }}</span>
             </template>
           </button>
+          <AlertBell />
           <n-tooltip>
             <template #trigger>
               <n-button quaternary circle @click="theme.cycle()">
@@ -367,6 +386,26 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
 }
 .upd-ring {
   width: 15px;
+}
+.sider :deep(.menu-link) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.sider :deep(.menu-count) {
+  min-width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--status-critical);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .content {
   height: calc(100vh - 60px);

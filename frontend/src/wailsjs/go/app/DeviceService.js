@@ -18,12 +18,24 @@ export function DeleteGroup(arg1) {
   return window['go']['app']['DeviceService']['DeleteGroup'](arg1);
 }
 
+export function ExportAssets() {
+  return window['go']['app']['DeviceService']['ExportAssets']();
+}
+
 export function Get(arg1) {
   return window['go']['app']['DeviceService']['Get'](arg1);
 }
 
 export function Identify(arg1) {
   return window['go']['app']['DeviceService']['Identify'](arg1);
+}
+
+export function Import(arg1) {
+  return window['go']['app']['DeviceService']['Import'](arg1);
+}
+
+export function ImportTemplate() {
+  return window['go']['app']['DeviceService']['ImportTemplate']();
 }
 
 export function List() {
@@ -36,6 +48,10 @@ export function ListGroups() {
 
 export function MoveToGroup(arg1, arg2) {
   return window['go']['app']['DeviceService']['MoveToGroup'](arg1, arg2);
+}
+
+export function PreviewImport() {
+  return window['go']['app']['DeviceService']['PreviewImport']();
 }
 
 export function RefreshStatus(arg1) {

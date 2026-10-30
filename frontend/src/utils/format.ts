@@ -77,6 +77,8 @@ export const auditActionLabel: Record<string, string> = {
   'device.set_credential': '更换凭据',
   'device.reveal_password': '查看设备密码',
   'device.trust_cert': '重新信任证书',
+  'device.export': '导出设备资产',
+  'device.import': '导入设备',
   'group.create': '创建分组',
   'group.rename': '重命名分组',
   'group.delete': '删除分组',
@@ -95,6 +97,9 @@ export const auditActionLabel: Record<string, string> = {
   'console.kvm': '打开远程控制台',
   'settings.update': '修改系统设置',
   'update.config': '修改更新设置',
+  'alert.config': '修改告警设置',
+  'backup.create': '备份数据库',
+  'backup.restore': '恢复数据库',
   'update.install': '安装更新',
   'update.finish': '更新结果',
   'scan.start': '开始扫描',
@@ -102,3 +107,25 @@ export const auditActionLabel: Record<string, string> = {
 }
 
 export const protocolLabel: Record<string, string> = { auto: '自动', ipmi: '仅 IPMI', redfish: '仅 Redfish' }
+
+export const alertSeverityLabel: Record<string, string> = { critical: '严重', warning: '警告', ok: '恢复' }
+export const alertKindLabel: Record<string, string> = { offline: '离线', health: '健康', power: '电源' }
+
+/** Orders version strings by their number and letter runs: 1.4a < 1.10, v2.81 < v3.00. */
+export function compareVersions(a: string, b: string): number {
+  const ta = a.toLowerCase().match(/\d+|[a-z]+/g) ?? []
+  const tb = b.toLowerCase().match(/\d+|[a-z]+/g) ?? []
+  for (let i = 0; i < Math.min(ta.length, tb.length); i++) {
+    const na = /^\d/.test(ta[i])
+    const nb = /^\d/.test(tb[i])
+    if (na && nb) {
+      const d = Number(ta[i]) - Number(tb[i])
+      if (d) return d
+    } else if (na !== nb) {
+      return na ? 1 : -1
+    } else if (ta[i] !== tb[i]) {
+      return ta[i] < tb[i] ? -1 : 1
+    }
+  }
+  return ta.length - tb.length
+}

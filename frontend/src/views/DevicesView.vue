@@ -8,10 +8,12 @@ import {
 import {
   AddOutline, SearchOutline, RefreshOutline, GlobeOutline, DesktopOutline, EllipsisHorizontal, PowerOutline,
   FolderOutline, FolderOpenOutline, KeyOutline, TrashOutline, CreateOutline, ScanOutline, LayersOutline,
+  DownloadOutline, CloudUploadOutline,
 } from '@vicons/ionicons5'
 import StatusBadges from '@/components/StatusBadges.vue'
 import VendorBadge from '@/components/VendorBadge.vue'
 import DeviceFormModal from '@/components/DeviceFormModal.vue'
+import ImportDevicesModal from '@/components/ImportDevicesModal.vue'
 import { api, errMsg, type Device, type PowerAction } from '@/api'
 import { useDevices } from '@/stores/devices'
 import { useSession } from '@/stores/session'
@@ -28,6 +30,20 @@ const actions = useDeviceActions()
 
 const canManage = computed(() => session.can('device.manage'))
 const canPower = computed(() => session.can('power.control'))
+
+const showImport = ref(false)
+const exporting = ref(false)
+async function exportAssets() {
+  exporting.value = true
+  try {
+    const path = await api.devices.exportAssets()
+    if (path) message.success(`已导出到 ${path}`)
+  } catch (e) {
+    message.error(errMsg(e))
+  } finally {
+    exporting.value = false
+  }
+}
 
 // ----- filters -----
 const groupFilter = ref<number | 'all'>('all')
@@ -269,6 +285,14 @@ function healthRank(d: Device) {
           <template #icon><n-icon :component="RefreshOutline" /></template>
           刷新状态
         </n-button>
+        <n-button :loading="exporting" @click="exportAssets">
+          <template #icon><n-icon :component="DownloadOutline" /></template>
+          导出 Excel
+        </n-button>
+        <n-button v-if="canManage" @click="showImport = true">
+          <template #icon><n-icon :component="CloudUploadOutline" /></template>
+          批量导入
+        </n-button>
         <n-button v-if="canManage" @click="router.push('/discovery')">
           <template #icon><n-icon :component="ScanOutline" /></template>
           扫描发现
@@ -386,6 +410,8 @@ function healthRank(d: Device) {
       :default-group="typeof groupFilter === 'number' ? groupFilter : 0"
       @saved="store.load()"
     />
+
+    <ImportDevicesModal v-model:show="showImport" @imported="store.load()" />
 
     <n-modal v-model:show="groupModal.show" preset="dialog" :title="groupModal.id ? '重命名分组' : '新建分组'" positive-text="保存" negative-text="取消" @positive-click="saveGroup">
       <n-form @submit.prevent="saveGroup">

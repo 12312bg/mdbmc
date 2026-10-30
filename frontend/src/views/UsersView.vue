@@ -131,16 +131,16 @@ const columns = computed<DataTableColumns<UserDTO>>(() => [
 
 // ----- permission matrix -----
 const permRows: { perm: Permission; label: string }[] = [
-  { perm: 'device.view', label: '查看设备、传感器、事件日志、资产' },
+  { perm: 'device.view', label: '查看设备、传感器、事件日志、资产、告警，导出资产' },
   { perm: 'console.web', label: '打开 BMC Web 登录页' },
   { perm: 'console.autologin', label: 'Web 管理自动登录' },
   { perm: 'console.kvm', label: '远程控制台 KVM' },
   { perm: 'power.control', label: '电源控制、定位灯' },
   { perm: 'sel.clear', label: '清空事件日志' },
-  { perm: 'device.manage', label: '添加 / 扫描 / 编辑 / 删除设备、分组、凭据' },
+  { perm: 'device.manage', label: '添加 / 扫描 / 导入 / 编辑 / 删除设备、分组、凭据' },
   { perm: 'credential.reveal', label: '查看 BMC 密码明文' },
   { perm: 'user.manage', label: '用户管理' },
-  { perm: 'settings.manage', label: '修改系统设置' },
+  { perm: 'settings.manage', label: '修改系统设置、告警设置，备份与恢复数据库' },
   { perm: 'audit.view', label: '查看审计日志' },
   { perm: 'system.update', label: '下载安装软件更新、修改更新设置' },
 ]

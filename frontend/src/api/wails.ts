@@ -6,6 +6,8 @@ import * as Cred from '@/wailsjs/go/app/CredentialService'
 import * as BMC from '@/wailsjs/go/app/BMCService'
 import * as Disc from '@/wailsjs/go/app/DiscoveryService'
 import * as Upd from '@/wailsjs/go/app/UpdateService'
+import * as Alerts from '@/wailsjs/go/app/AlertService'
+import * as Backup from '@/wailsjs/go/app/BackupService'
 import { BrowserOpenURL, EventsOn } from '@/wailsjs/runtime/runtime'
 import type { Api } from './types'
 
@@ -52,6 +54,10 @@ export const wailsApi: Api = {
     createGroup: (n) => c(Dev.CreateGroup(n)),
     renameGroup: (id, n) => Dev.RenameGroup(id, n),
     deleteGroup: (id) => Dev.DeleteGroup(id),
+    exportAssets: () => Dev.ExportAssets(),
+    importTemplate: () => Dev.ImportTemplate(),
+    previewImport: () => c(Dev.PreviewImport()),
+    importDevices: (token) => c(Dev.Import(token)),
   },
   credentials: {
     list: () => c(Cred.List()),
@@ -85,6 +91,20 @@ export const wailsApi: Api = {
     dismissResult: () => Upd.DismissResult(),
     getConfig: () => c(Upd.GetConfig()),
     saveConfig: (cfg) => Upd.SaveConfig(a(cfg)),
+  },
+  alerts: {
+    inbox: () => c(Alerts.Inbox()),
+    list: (q) => c(Alerts.List(a(q))),
+    markAllRead: () => Alerts.MarkAllRead(),
+    setPopup: (on) => Alerts.SetPopup(on),
+    getConfig: () => c(Alerts.GetConfig()),
+    saveConfig: (cfg) => Alerts.SaveConfig(a(cfg)),
+    testWebhook: (cfg) => Alerts.TestWebhook(a(cfg)),
+  },
+  backup: {
+    create: () => Backup.Backup(),
+    inspectRestore: () => c(Backup.InspectRestore()),
+    restore: (token) => c(Backup.Restore(token)),
   },
   openExternal: (url) => BrowserOpenURL(url),
   on: (name, cb) => EventsOn(name, cb as (...data: any) => void),

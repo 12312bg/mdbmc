@@ -11,15 +11,23 @@ export function Delete(arg1:Array<number>):Promise<number>;
 
 export function DeleteGroup(arg1:number):Promise<void>;
 
+export function ExportAssets():Promise<string>;
+
 export function Get(arg1:number):Promise<app.DeviceDTO>;
 
 export function Identify(arg1:number):Promise<app.DeviceDTO>;
+
+export function Import(arg1:string):Promise<app.ImportResult>;
+
+export function ImportTemplate():Promise<string>;
 
 export function List():Promise<Array<app.DeviceDTO>>;
 
 export function ListGroups():Promise<Array<app.GroupDTO>>;
 
 export function MoveToGroup(arg1:Array<number>,arg2:number):Promise<void>;
+
+export function PreviewImport():Promise<app.ImportPreview>;
 
 export function RefreshStatus(arg1:Array<number>):Promise<void>;
 

@@ -41,7 +41,7 @@ const overrides = computed<GlobalThemeOverrides>(() => {
   <n-config-provider :theme="theme.dark ? darkTheme : null" :theme-overrides="overrides" :locale="zhCN" :date-locale="dateZhCN">
     <n-loading-bar-provider>
       <n-message-provider placement="top">
-        <n-notification-provider placement="bottom-right">
+        <n-notification-provider placement="bottom-right" :max="5">
           <n-dialog-provider>
             <router-view />
           </n-dialog-provider>

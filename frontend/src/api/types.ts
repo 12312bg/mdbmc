@@ -419,6 +419,94 @@ export interface UpdateConfig {
   proxy: string
 }
 
+export type AlertSeverity = 'critical' | 'warning' | 'ok'
+/** offline: BMC not answering; health: health rollup; power: unexpected power-off. */
+export type AlertKind = 'offline' | 'health' | 'power'
+
+export interface AlertItem {
+  id: number
+  ts: number
+  deviceId: number
+  deviceName: string
+  host: string
+  kind: AlertKind
+  severity: AlertSeverity
+  title: string
+  detail: string
+  unread: boolean
+}
+
+export interface AlertQuery {
+  severity: string
+  keyword: string
+  page: number
+  size: number
+}
+
+export interface AlertPage {
+  items: AlertItem[]
+  total: number
+  unread: number
+}
+
+export interface AlertInbox {
+  unread: number
+  /** New alerts pop up for this user. */
+  popup: boolean
+}
+
+export interface AlertConfig {
+  offline: boolean
+  health: boolean
+  powerLoss: boolean
+  historyMax: number
+  webhookUrl: string
+  webhookSecret: string
+  /** Outcome of the last webhook delivery (read-only). */
+  lastWebhook: string
+}
+
+export interface ImportRow {
+  row: number
+  name: string
+  host: string
+  ipmiPort: number
+  httpsPort: number
+  protocol: string
+  group: string
+  credential: string
+  username: string
+  hasPassword: boolean
+  note: string
+  /** ok: will be added; skip: already managed; error */
+  status: 'ok' | 'skip' | 'error'
+  message: string
+}
+
+export interface ImportPreview {
+  token: string
+  file: string
+  rows: ImportRow[]
+  ok: number
+  skip: number
+  errors: number
+  newGroups: string[]
+}
+
+export interface ImportResult {
+  added: number
+  failed: string[]
+}
+
+export interface BackupFile {
+  token: string
+  file: string
+  size: number
+  modTime: number
+  users: number
+  devices: number
+}
+
 export interface EventMap {
   'device:status': DeviceStatusEvent
   'device:updated': number
@@ -427,6 +515,7 @@ export interface EventMap {
   'scan:found': ScanFound
   'poll:state': { running: boolean; lastPoll?: number }
   'update:state': UpdateStatus
+  'alert:new': AlertItem
 }
 
 export interface Api {
@@ -469,6 +558,12 @@ export interface Api {
     createGroup(name: string): Promise<Group>
     renameGroup(id: number, name: string): Promise<void>
     deleteGroup(id: number): Promise<void>
+    /** Saves an Excel workbook; resolves to the file, or "" when cancelled. */
+    exportAssets(): Promise<string>
+    importTemplate(): Promise<string>
+    /** Picks a workbook and checks it; null when cancelled. */
+    previewImport(): Promise<ImportPreview | null>
+    importDevices(token: string): Promise<ImportResult>
   }
   credentials: {
     list(): Promise<Credential[]>
@@ -503,6 +598,23 @@ export interface Api {
     dismissResult(): Promise<void>
     getConfig(): Promise<UpdateConfig>
     saveConfig(c: UpdateConfig): Promise<void>
+  }
+  alerts: {
+    inbox(): Promise<AlertInbox>
+    list(q: AlertQuery): Promise<AlertPage>
+    markAllRead(): Promise<void>
+    setPopup(on: boolean): Promise<void>
+    getConfig(): Promise<AlertConfig>
+    saveConfig(c: AlertConfig): Promise<void>
+    testWebhook(c: AlertConfig): Promise<void>
+  }
+  backup: {
+    /** Resolves to the file written, or "" when cancelled. */
+    create(): Promise<string>
+    /** Picks a backup and checks it; null when cancelled. */
+    inspectRestore(): Promise<BackupFile | null>
+    /** restarting: the program restarts by itself to finish. */
+    restore(token: string): Promise<{ restarting: boolean }>
   }
   /** Opens a web page in the system browser. */
   openExternal(url: string): void

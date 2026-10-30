@@ -78,6 +78,252 @@ export namespace app {
 	        this.skipped = source["skipped"];
 	    }
 	}
+	export class AlertConfig {
+	    offline: boolean;
+	    health: boolean;
+	    powerLoss: boolean;
+	    historyMax: number;
+	    webhookUrl: string;
+	    webhookSecret: string;
+	    lastWebhook: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlertConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.offline = source["offline"];
+	        this.health = source["health"];
+	        this.powerLoss = source["powerLoss"];
+	        this.historyMax = source["historyMax"];
+	        this.webhookUrl = source["webhookUrl"];
+	        this.webhookSecret = source["webhookSecret"];
+	        this.lastWebhook = source["lastWebhook"];
+	    }
+	}
+	export class AlertDTO {
+	    id: number;
+	    ts: number;
+	    deviceId: number;
+	    deviceName: string;
+	    host: string;
+	    kind: string;
+	    severity: string;
+	    title: string;
+	    detail: string;
+	    unread: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlertDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.ts = source["ts"];
+	        this.deviceId = source["deviceId"];
+	        this.deviceName = source["deviceName"];
+	        this.host = source["host"];
+	        this.kind = source["kind"];
+	        this.severity = source["severity"];
+	        this.title = source["title"];
+	        this.detail = source["detail"];
+	        this.unread = source["unread"];
+	    }
+	}
+	export class AlertInbox {
+	    unread: number;
+	    popup: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlertInbox(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.unread = source["unread"];
+	        this.popup = source["popup"];
+	    }
+	}
+	export class AlertPage {
+	    items: AlertDTO[];
+	    total: number;
+	    unread: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlertPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.items = this.convertValues(source["items"], AlertDTO);
+	        this.total = source["total"];
+	        this.unread = source["unread"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AlertQuery {
+	    severity: string;
+	    keyword: string;
+	    page: number;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlertQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.severity = source["severity"];
+	        this.keyword = source["keyword"];
+	        this.page = source["page"];
+	        this.size = source["size"];
+	    }
+	}
+	export class BackupFile {
+	    token: string;
+	    file: string;
+	    size: number;
+	    modTime: number;
+	    users: number;
+	    devices: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackupFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.file = source["file"];
+	        this.size = source["size"];
+	        this.modTime = source["modTime"];
+	        this.users = source["users"];
+	        this.devices = source["devices"];
+	    }
+	}
+	export class ImportRow {
+	    row: number;
+	    name: string;
+	    host: string;
+	    ipmiPort: number;
+	    httpsPort: number;
+	    protocol: string;
+	    group: string;
+	    credential: string;
+	    username: string;
+	    hasPassword: boolean;
+	    note: string;
+	    status: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.row = source["row"];
+	        this.name = source["name"];
+	        this.host = source["host"];
+	        this.ipmiPort = source["ipmiPort"];
+	        this.httpsPort = source["httpsPort"];
+	        this.protocol = source["protocol"];
+	        this.group = source["group"];
+	        this.credential = source["credential"];
+	        this.username = source["username"];
+	        this.hasPassword = source["hasPassword"];
+	        this.note = source["note"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	    }
+	}
+	export class ImportPreview {
+	    token: string;
+	    file: string;
+	    rows: ImportRow[];
+	    ok: number;
+	    skip: number;
+	    errors: number;
+	    newGroups: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.file = source["file"];
+	        this.rows = this.convertValues(source["rows"], ImportRow);
+	        this.ok = source["ok"];
+	        this.skip = source["skip"];
+	        this.errors = source["errors"];
+	        this.newGroups = source["newGroups"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ImportResult {
+	    added: number;
+	    failed: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.added = source["added"];
+	        this.failed = source["failed"];
+	    }
+	}
+	export class RestoreResult {
+	    restarting: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new RestoreResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.restarting = source["restarting"];
+	    }
+	}
 	export class AuditEntry {
 	    id: number;
 	    ts: number;

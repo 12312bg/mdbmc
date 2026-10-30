@@ -1,7 +1,8 @@
 // In-memory backend for previewing the UI in a plain browser (npm run dev).
 // Any password of 8+ characters logs in as an existing user.
 import type {
-  Api, AuditEntry, Credential, Device, EventMap, Group, Inventory, Role, SELEntry, Sensor, UpdateStatus, UserDTO, UserInfo,
+  AlertConfig, AlertItem, Api, AuditEntry, Credential, Device, EventMap, Group, ImportPreview, Inventory, Role, SELEntry, Sensor,
+  UpdateStatus, UserDTO, UserInfo,
 } from './types'
 
 const now = () => Math.floor(Date.now() / 1000)
@@ -87,6 +88,16 @@ const devices: Device[] = seeds.map(([name, host, vendor, model, gid, cid, power
   checkedAt: now() - 40, identifiedAt: now() - 86400, createdAt: now() - 86400 * 10,
 }))
 
+// Some preview devices run other firmware, as after a partial upgrade.
+const firmwareOverride: Record<string, [string, string]> = {
+  'sm-node01': ['01.02.04', '1.5'], 'sm-node03': ['01.02.04', '1.4a'], 'sm-gpu02': ['01.00.25', '1.3'],
+  'dell-db02': ['7.00.00.171', '1.9.2'],
+}
+devices.forEach((d) => {
+  const o = firmwareOverride[d.name]
+  if (o) [d.bmcFirmware, d.biosVersion] = o
+})
+
 function decorate(d: Device): Device {
   return {
     ...d,
@@ -163,6 +174,64 @@ async function mockCheck() {
     state: ready ? 'ready' : 'available', checkedAt: now(),
     latest: { version: '0.2.0', tag: 'v0.2.0', publishedAt: now() - 86400 * 2, notes: mockNotes, size: upd.mode === 'portable' ? 46_734_811 : 44_902_376 },
   })
+}
+
+// ----- alerts -----
+// ?alerts=none starts with an empty inbox; a new alert arrives shortly after
+// login and then every minute or so.
+type AlertSeed = [string, AlertItem['kind'], AlertItem['severity'], string, string]
+const alertSeeds: AlertSeed[] = [
+  ['sm-gpu02', 'health', 'critical', '健康状态：严重', 'BMC 报告的健康汇总状态异常，请查看传感器和事件日志。'],
+  ['inspur-test01', 'health', 'warning', '健康状态：警告', 'BMC 报告的健康汇总状态异常，请查看传感器和事件日志。'],
+  ['dell-app01', 'offline', 'critical', 'BMC 无法连接', '连续 2 次检查都没有响应。'],
+  ['sm-node02', 'health', 'warning', '健康状态：警告', 'BMC 报告的健康汇总状态异常，请查看传感器和事件日志。'],
+  ['hw-test01', 'power', 'critical', '意外断电', '设备从开机变为关机，期间没有人在本软件中执行电源操作。'],
+  ['lab-fj01', 'power', 'critical', '意外断电', '设备从开机变为关机，期间没有人在本软件中执行电源操作。'],
+  ['lab-ucs01', 'offline', 'critical', 'BMC 无法连接', '连续 2 次检查都没有响应。'],
+  ['lab-ucs01', 'offline', 'ok', 'BMC 已恢复连接', ''],
+  ['dell-db02', 'health', 'warning', '健康状态：警告', 'BMC 报告的健康汇总状态异常，请查看传感器和事件日志。'],
+  ['dell-db02', 'health', 'ok', '健康状态已恢复正常', ''],
+]
+let alertId = 1
+const alerts: AlertItem[] = []
+if (params.get('alerts') !== 'none') {
+  for (let i = 0; i < 64; i++) {
+    const [name, kind, severity, title, detail] = alertSeeds[i % alertSeeds.length]
+    const d = devices.find((x) => x.name === name)!
+    alerts.unshift({ id: alertId++, ts: now() - (64 - i) * 3700 - 300, deviceId: d.id, deviceName: d.name, host: d.host, kind, severity, title, detail, unread: false })
+  }
+}
+const alertRead = new Map<number, number>([[1, Math.max(0, alertId - 4)]])
+const alertPopup = new Map<number, boolean>()
+let alertConfig: AlertConfig = { offline: true, health: true, powerLoss: true, historyMax: 1000, webhookUrl: '', webhookSecret: '', lastWebhook: '' }
+let alertTimer: number | undefined
+const liveAlerts: AlertSeed[] = [
+  ['sm-node03', 'health', 'warning', '健康状态：警告', 'BMC 报告的健康汇总状态异常，请查看传感器和事件日志。'],
+  ['sm-node03', 'health', 'ok', '健康状态已恢复正常', ''],
+  ['lenovo-bk01', 'offline', 'critical', 'BMC 无法连接', '连续 2 次检查都没有响应。'],
+  ['lenovo-bk01', 'offline', 'ok', 'BMC 已恢复连接', ''],
+]
+function startAlertFeed() {
+  if (alertTimer !== undefined) return
+  let n = 0
+  const fire = () => {
+    const [name, kind, severity, title, detail] = liveAlerts[n++ % liveAlerts.length]
+    const d = devices.find((x) => x.name === name)
+    if (!d) return
+    const al: AlertItem = { id: alertId++, ts: now(), deviceId: d.id, deviceName: d.name, host: d.host, kind, severity, title, detail, unread: true }
+    alerts.unshift(al)
+    alerts.splice(alertConfig.historyMax)
+    if (alertConfig.webhookUrl) alertConfig.lastWebhook = `${new Date().toLocaleString()} 推送成功`
+    emit('alert:new', { ...al })
+  }
+  alertTimer = window.setTimeout(function tick() {
+    fire()
+    alertTimer = window.setTimeout(tick, 60_000 + Math.random() * 30_000)
+  }, 6000)
+}
+function unreadCount() {
+  const read = alertRead.get(current!.id) ?? 0
+  return alerts.filter((a) => a.id > read).length
 }
 
 function deviceOr404(id: number) {
@@ -411,6 +480,52 @@ export const mockApi: Api = {
       groups.splice(groups.findIndex((g) => g.id === id), 1)
       devices.filter((d) => d.groupId === id).forEach((d) => (d.groupId = 0))
     },
+    async exportAssets() {
+      need('device.view'); await sleep(900)
+      log('device.export', '设备资产.xlsx', true, `${devices.length} 台设备`)
+      return 'C:\\Users\\ops\\Documents\\设备资产-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '.xlsx'
+    },
+    async importTemplate() { need('device.manage'); await wait(); return 'C:\\Users\\ops\\Documents\\设备导入模板.xlsx' },
+    async previewImport() {
+      need('device.manage'); await sleep(600)
+      const row = (n: number, name: string, host: string, extra: Partial<ImportPreview['rows'][number]> = {}): ImportPreview['rows'][number] => ({
+        row: n, name, host, ipmiPort: 623, httpsPort: 443, protocol: 'auto', group: '机房 B · 01 列', credential: '', username: 'ADMIN',
+        hasPassword: true, note: '', status: 'ok', message: '', ...extra,
+      })
+      const rows = [
+        ...Array.from({ length: 12 }, (_, i) => row(i + 2, `web-${String(i + 1).padStart(2, '0')}`, `10.10.8.${11 + i}`, i % 3 === 2 ? { credential: 'Supermicro 默认', username: '', hasPassword: false } : {})),
+        row(14, 'ipmi-only01', '10.10.8.31', { protocol: 'ipmi', group: '', note: '老机型，只有 IPMI' }),
+        row(15, 'sm-node01', '10.10.1.11', { status: 'skip', message: '该地址和端口的设备已存在，跳过' }),
+        row(16, 'web-13', '10.10.8.13', { status: 'error', message: '与第 4 行的地址和端口重复' }),
+        row(17, 'db-new01', '10.10.8.41', { credential: '浪潮默认', username: '', hasPassword: false, status: 'error', message: '凭据模板“浪潮默认”不存在' }),
+        row(18, 'db-new02', '10.10.8.42', { ipmiPort: 0, status: 'error', message: '端口“623/udp”不是整数' }),
+        row(19, '', '', { status: 'error', message: '请填写 BMC 地址' }),
+      ]
+      return {
+        token: 'mock-import', file: '设备导入-机房B.xlsx', rows,
+        ok: rows.filter((r) => r.status === 'ok').length, skip: rows.filter((r) => r.status === 'skip').length,
+        errors: rows.filter((r) => r.status === 'error').length, newGroups: ['机房 B · 01 列'],
+      }
+    },
+    async importDevices(token) {
+      need('device.manage'); await sleep(800)
+      if (token !== 'mock-import') throw new Error('导入预览已失效，请重新选择文件')
+      let g = groups.find((x) => x.name === '机房 B · 01 列')
+      if (!g) { g = { id: groups.length + 10, name: '机房 B · 01 列', deviceCount: 0 }; groups.push(g) }
+      const added: Device[] = []
+      for (let i = 0; i < 13; i++) {
+        const host = i < 12 ? `10.10.8.${11 + i}` : '10.10.8.31'
+        if (devices.some((d) => d.host === host)) continue
+        const d: Device = { ...devices[0], id: nextDeviceId++, name: i < 12 ? `web-${String(i + 1).padStart(2, '0')}` : 'ipmi-only01', host, groupId: i < 12 ? g.id : 0, credentialId: i % 3 === 2 ? 1 : 0, vendor: '', model: '', serial: '', bmcFirmware: '', biosVersion: '', powerState: 'unknown', health: 'unknown', reachable: false, checkedAt: 0, identifiedAt: 0, lastError: '', createdAt: now() }
+        devices.push(d); added.push(d)
+      }
+      log('device.import', '设备导入-机房B.xlsx', true, `导入 ${added.length} 台`)
+      added.forEach((d, i) => setTimeout(() => {
+        Object.assign(d, { vendor: 'supermicro', manufacturer: 'Supermicro', model: 'SYS-120U-TNR', serial: 'S5040SIM' + d.id, bmcFirmware: i % 4 === 0 ? '01.02.04' : '01.01.10', biosVersion: '1.4a', powerState: 'on', health: 'ok', reachable: true, checkedAt: now(), identifiedAt: now() })
+        emit('device:updated', d.id)
+      }, 1200 + i * 150))
+      return { added: added.length, failed: [] }
+    },
   },
   credentials: {
     async list() { need('device.view'); await wait(); return creds.map((c) => ({ ...c, deviceCount: devices.filter((d) => d.credentialId === c.id).length })) },
@@ -571,6 +686,65 @@ export const mockApi: Api = {
       if (c.source && !/^https?:\/\/[^/?#]+/.test(c.source.trim())) throw new Error('更新源需为 http:// 或 https:// 开头的地址，且不带查询参数')
       updConfig = { ...c, source: c.source.trim().replace(/\/+$/, ''), proxy: c.proxy.trim() }
       log('update.config', '', true, `自动检查间隔 ${c.checkHours} 小时`)
+    },
+  },
+  alerts: {
+    async inbox() {
+      if (!current) throw new Error('未登录或会话已锁定，请重新登录')
+      startAlertFeed()
+      return { unread: unreadCount(), popup: alertPopup.get(current.id) ?? true }
+    },
+    async list(q) {
+      need('device.view'); await wait()
+      const kw = q.keyword.trim().toLowerCase()
+      const read = alertRead.get(current!.id) ?? 0
+      const rows = alerts.filter((a) => (!q.severity || a.severity === q.severity) &&
+        (!kw || [a.deviceName, a.host, a.title, a.detail].some((x) => x.toLowerCase().includes(kw))))
+      return {
+        items: rows.slice((q.page - 1) * q.size, q.page * q.size).map((a) => ({ ...a, unread: a.id > read })),
+        total: rows.length, unread: unreadCount(),
+      }
+    },
+    async markAllRead() {
+      if (!current) throw new Error('未登录或会话已锁定，请重新登录')
+      alertRead.set(current.id, alerts[0]?.id ?? 0)
+    },
+    async setPopup(on) {
+      if (!current) throw new Error('未登录或会话已锁定，请重新登录')
+      alertPopup.set(current.id, on)
+    },
+    async getConfig() { need('settings.manage'); return { ...alertConfig } },
+    async saveConfig(c) {
+      need('settings.manage'); await wait()
+      if (c.historyMax < 100 || c.historyMax > 100000) throw new Error('历史告警条数需在 100 到 100000 之间')
+      if (c.webhookUrl.trim() && !/^https?:\/\/[^/?#]+/.test(c.webhookUrl.trim())) throw new Error('Webhook 地址需为 http:// 或 https:// 开头的完整地址')
+      alertConfig = { ...c, webhookUrl: c.webhookUrl.trim(), webhookSecret: c.webhookSecret.trim(), lastWebhook: alertConfig.lastWebhook }
+      alerts.splice(c.historyMax)
+      log('alert.config', '', true, `保留 ${c.historyMax} 条；Webhook：${c.webhookUrl ? '已设置' : '未设置'}`)
+    },
+    async testWebhook(c) {
+      need('settings.manage'); await sleep(700)
+      if (!c.webhookUrl.trim()) throw new Error('请先填写 Webhook 地址')
+      if (/fail/.test(c.webhookUrl)) throw new Error('发送失败：HTTP 404 Not Found')
+    },
+  },
+  backup: {
+    async create() {
+      need('settings.manage'); await sleep(700)
+      const name = `mdbmc-备份-${new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '').replace(/^(\d{8})/, '$1-')}.db`
+      log('backup.create', name)
+      return 'D:\\备份\\' + name
+    },
+    async inspectRestore() {
+      need('settings.manage'); await sleep(500)
+      return { token: 'mock-restore', file: 'mdbmc-备份-20261028-1830.db', size: 1_843_200, modTime: now() - 86400 * 2, users: 3, devices: 18 }
+    },
+    async restore(token) {
+      need('settings.manage'); await wait()
+      if (token !== 'mock-restore') throw new Error('请重新选择备份文件')
+      log('backup.restore', 'mdbmc-备份-20261028-1830.db', true, '重启后生效')
+      setTimeout(() => location.reload(), 2500)
+      return { restarting: true }
     },
   },
   openExternal(url) {
