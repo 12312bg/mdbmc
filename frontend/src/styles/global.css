@@ -14,7 +14,7 @@
   --status-warning: #fab219;
   --status-critical: #d03b3b;
   --status-unknown: #a3a9b2;
-  --power-on: #2a78d6;
+  --power-on: var(--status-good);
   --power-off: #8a93a0;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
   --radius: 10px;
@@ -34,7 +34,6 @@
   --accent-soft: #1d2a3b;
   --track: #2a2d33;
   --status-unknown: #5f6670;
-  --power-on: #3987e5;
   --power-off: #6b7280;
   --shadow: none;
   --sider-bg: #0c0d10;
