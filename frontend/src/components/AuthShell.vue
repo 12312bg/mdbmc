@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import AppLogo from './AppLogo.vue'
+import { NIcon } from 'naive-ui'
+import { ServerOutline, DesktopOutline, NotificationsOutline } from '@vicons/ionicons5'
+import wordmark from '@/assets/logo-wordmark.png'
 import { useSession } from '@/stores/session'
 
 const session = useSession()
+const year = new Date().getFullYear()
+const points = [
+  { icon: ServerOutline, text: '多品牌 BMC 统一接入' },
+  { icon: DesktopOutline, text: '远程控制台一站操作' },
+  { icon: NotificationsOutline, text: '异常即时告警，操作全程留痕' },
+]
 </script>
 
 <template>
   <div class="auth">
     <aside class="hero">
       <div class="hero-top">
-        <AppLogo :size="40" plate="always" />
-        <span class="hero-brand">明点信科</span>
+        <!-- The wordmark's dark lettering needs a light plate on the dark hero. -->
+        <span class="hero-logo"><img :src="wordmark" alt="明点信科" draggable="false" /></span>
       </div>
       <div class="hero-body">
         <h1>明点服务器管理系统</h1>
+        <p class="tagline">一个窗口，管好每一台服务器</p>
+        <ul class="points">
+          <li v-for="p in points" :key="p.text">
+            <span class="point-icon"><n-icon :component="p.icon" :size="16" /></span>
+            {{ p.text }}
+          </li>
+        </ul>
       </div>
       <svg class="rack" viewBox="0 0 320 260" aria-hidden="true">
         <defs>
@@ -29,7 +44,7 @@ const session = useSession()
           <rect x="68" :y="33 + (i - 1) * 27" :width="60 + ((i * 37) % 60)" height="5" rx="2.5" fill="#ffffff" fill-opacity="0.22" />
         </g>
       </svg>
-      <div class="hero-foot">v{{ session.status?.version }}</div>
+      <div class="hero-foot">© {{ year }} 明点信科<template v-if="session.status?.version"> · v{{ session.status.version }}</template></div>
     </aside>
     <main class="panel">
       <div class="panel-inner">
@@ -59,12 +74,18 @@ const session = useSession()
 .hero-top {
   display: flex;
   align-items: center;
-  gap: 12px;
 }
-.hero-brand {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+.hero-logo {
+  display: inline-flex;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.hero-logo img {
+  display: block;
+  height: 40px;
+  width: auto;
 }
 .hero-body {
   margin-top: 12vh;
@@ -86,6 +107,40 @@ const session = useSession()
   margin-top: 18px;
   border-radius: 2px;
   background: #86b6ef;
+}
+.tagline {
+  margin: 22px 0 0;
+  font-size: 17px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.88);
+}
+.points {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+}
+.points li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.points li + li {
+  margin-top: 14px;
+}
+.point-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(134, 182, 239, 0.16);
+  color: #9cc4f3;
 }
 .rack {
   position: absolute;
@@ -110,6 +165,11 @@ const session = useSession()
 .panel-inner {
   width: 100%;
   max-width: 380px;
+}
+@media (max-height: 780px) {
+  .rack {
+    width: 220px;
+  }
 }
 @media (max-width: 900px) {
   .hero {

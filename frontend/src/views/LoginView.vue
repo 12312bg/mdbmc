@@ -38,7 +38,7 @@ async function submit() {
 
 <template>
   <AuthShell>
-    <h2 class="title">登录</h2>
+    <h2 class="title">欢迎回来</h2>
     <n-alert v-if="session.lockedReason" type="info" :bordered="false" class="gap">{{ session.lockedReason }}</n-alert>
     <n-alert v-if="api.isMock" type="default" :bordered="false" :show-icon="false" class="gap">
       预览模式：用户名 admin / zhangwei / liuyang，任意 8 位以上密码。
@@ -64,7 +64,7 @@ async function submit() {
       <n-alert v-if="error" type="error" :bordered="false" class="gap">{{ error }}</n-alert>
       <n-button type="primary" size="large" block :loading="loading" attr-type="submit">登录</n-button>
     </n-form>
-    <p class="foot muted">忘记密码请联系管理员重置。</p>
+    <p class="foot muted">忘记密码？请联系管理员重置</p>
   </AuthShell>
 </template>
 
