@@ -47,6 +47,8 @@ func (s *BMCService) Power(ids []int64, action string) (*BatchResult, error) {
 	if len(ids) == 0 {
 		return nil, errors.New("请选择设备")
 	}
+	// The power-offs that follow are expected, not alerts.
+	s.a.alerts.notePowerAction(ids)
 	res := &BatchResult{BatchID: newID(), Total: len(ids)}
 	var mu sync.Mutex
 	var wg sync.WaitGroup

@@ -55,6 +55,18 @@ type App struct {
 	scanner  *scanner
 	services []any
 
+	// restart restarts the program (to finish a restore); nil when it
+	// cannot restart itself.
+	restart func()
+
+	dialogs        FileDialogs
+	pending        *pendingImport  // previewed device import
+	restorePending *pendingRestore // inspected backup
+
+	alerts   *alertWatcher
+	alertMu  sync.Mutex
+	alertCfg AlertConfig
+
 	updater      *update.Updater
 	updateDir    string
 	updateMu     sync.Mutex
@@ -66,7 +78,8 @@ type App struct {
 
 // New opens the database in dataDir and prepares the services.
 func New(dataDir string, launcher console.Launcher) (*App, error) {
-	st, err := store.Open(filepath.Join(dataDir, "mdbmc.db"))
+	note, kept, restoreErr := applyPendingRestore(dataDir)
+	st, err := store.Open(filepath.Join(dataDir, dbFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +94,9 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 
 		closeConsoles: console.CloseAll,
 	}
+	if note != nil || restoreErr != nil {
+		a.recordRestore(note, kept, restoreErr)
+	}
 	if err := a.loadSettings(); err != nil {
 		st.Close()
 		return nil, err
@@ -89,6 +105,11 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 		st.Close()
 		return nil, err
 	}
+	if err := a.loadAlertConfig(); err != nil {
+		st.Close()
+		return nil, err
+	}
+	a.alerts = newAlertWatcher(a)
 	a.poller = newPoller(a)
 	a.scanner = &scanner{a: a}
 	a.services = []any{
@@ -99,6 +120,8 @@ func New(dataDir string, launcher console.Launcher) (*App, error) {
 		&BMCService{a: a},
 		&DiscoveryService{a: a},
 		&UpdateService{a: a},
+		&AlertService{a: a},
+		&BackupService{a: a},
 	}
 	return a, nil
 }
@@ -113,6 +136,7 @@ func (a *App) Startup(ctx context.Context, emit Emitter) {
 		a.emit = emit
 	}
 	a.startUpdateChecks()
+	a.alerts.start()
 }
 
 // SetQuit lets the update service exit the program to install an update.
@@ -124,6 +148,9 @@ func (a *App) Shutdown() {
 	a.scanner.cancel()
 	if a.updateStop != nil {
 		a.updateStop()
+	}
+	if a.alerts.stop != nil {
+		a.alerts.stop()
 	}
 	a.updater.Cancel()
 	a.auth.Clear()

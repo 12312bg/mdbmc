@@ -165,6 +165,23 @@ CREATE TABLE settings (
 	value TEXT NOT NULL
 );
 `,
+	// Alerts kept for the inbox (device rows may be deleted later), and each
+	// user's inbox preferences.
+	`
+CREATE TABLE alerts (
+	id          INTEGER PRIMARY KEY,
+	ts          INTEGER NOT NULL,
+	device_id   INTEGER NOT NULL DEFAULT 0,
+	device_name TEXT NOT NULL DEFAULT '',
+	host        TEXT NOT NULL DEFAULT '',
+	kind        TEXT NOT NULL,
+	severity    TEXT NOT NULL,
+	title       TEXT NOT NULL,
+	detail      TEXT NOT NULL DEFAULT ''
+);
+ALTER TABLE users ADD COLUMN alert_popup INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN alert_read_id INTEGER NOT NULL DEFAULT 0;
+`,
 }
 
 func now() int64 { return time.Now().Unix() }

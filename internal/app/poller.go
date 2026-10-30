@@ -158,6 +158,13 @@ func (p *poller) pollOne(ctx context.Context, sess *auth.Session, d *store.Devic
 	if ctx.Err() != nil || p.a.auth.Current() != sess {
 		return // logged out mid-poll; do not record a spurious failure
 	}
+	// A failed poll only means offline when the BMC does not answer on the
+	// network either (not, say, after a password change).
+	if res.Reachable {
+		p.a.alerts.observe(d, true, string(res.Power), string(res.Health))
+	} else {
+		p.a.alerts.observe(d, p.a.alerts.probe(ctx, d), "", "")
+	}
 	p.a.pinIfFirst(d, c.ObservedFingerprint)
 	st := store.Status{
 		PowerState: string(res.Power), Health: string(res.Health), Reachable: res.Reachable,

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -18,11 +20,16 @@ import (
 
 	"github.com/12312bg/mdbmc/internal/app"
 	"github.com/12312bg/mdbmc/internal/console"
+	"github.com/12312bg/mdbmc/internal/proc"
 	"github.com/12312bg/mdbmc/internal/update"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+// afterExitFlag starts the program once the instance with the given PID has
+// exited (a restart).
+const afterExitFlag = "--after-exit"
 
 // dataDir is %APPDATA%\mdbmc unless MDBMC_DATA_DIR overrides it.
 func dataDir() (string, error) {
@@ -49,6 +56,23 @@ func setupLog(dir string) {
 	log.SetOutput(io.MultiWriter(f, os.Stderr))
 }
 
+// fileDialogs shows the system file dialogs over the main window.
+type fileDialogs struct{ ctx *context.Context }
+
+func (d fileDialogs) SaveFile(title, name, filterName, pattern string) (string, error) {
+	return wruntime.SaveFileDialog(*d.ctx, wruntime.SaveDialogOptions{
+		Title: title, DefaultFilename: name, CanCreateDirectories: true,
+		Filters: []wruntime.FileFilter{{DisplayName: filterName + " (" + pattern + ")", Pattern: pattern}},
+	})
+}
+
+func (d fileDialogs) OpenFile(title, filterName, pattern string) (string, error) {
+	return wruntime.OpenFileDialog(*d.ctx, wruntime.OpenDialogOptions{
+		Title:   title,
+		Filters: []wruntime.FileFilter{{DisplayName: filterName + " (" + pattern + ")", Pattern: pattern}},
+	})
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == console.Flag {
 		console.RunWindow()
@@ -57,6 +81,12 @@ func main() {
 	if len(os.Args) > 2 && os.Args[1] == update.HelperFlag {
 		update.RunHelper(os.Args[2])
 		return
+	}
+	// A restart (to finish a restore) waits for the instance it replaces.
+	if len(os.Args) > 2 && os.Args[1] == afterExitFlag {
+		if pid, err := strconv.Atoi(os.Args[2]); err == nil {
+			_ = proc.WaitExit(pid, 30*time.Second)
+		}
 	}
 
 	dir, err := dataDir()
@@ -83,7 +113,16 @@ func main() {
 	if runtime.GOOS == "windows" {
 		// Installing an update exits the program; the update helper starts it again.
 		a.SetQuit(func() { wruntime.Quit(wailsCtx) })
+		a.SetRestart(func() {
+			if exe, err := os.Executable(); err == nil {
+				if err := proc.StartDetached(exe, []string{afterExitFlag, strconv.Itoa(os.Getpid())}, filepath.Dir(exe)); err != nil {
+					log.Printf("restart: %v", err)
+				}
+			}
+			wruntime.Quit(wailsCtx)
+		})
 	}
+	a.SetFileDialogs(fileDialogs{&wailsCtx})
 
 	err = wails.Run(&options.App{
 		Title:     "明点服务器管理系统",

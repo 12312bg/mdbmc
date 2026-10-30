@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/12312bg/mdbmc/internal/proc"
 )
 
 // HelperFlag starts the program as the update helper:
@@ -107,7 +109,7 @@ func Launch(dir string, p Plan) error {
 		return err
 	}
 	_ = os.Remove(filepath.Join(dir, resultFile))
-	if err := startDetached(helper, []string{HelperFlag, planPath}, dir); err != nil {
+	if err := proc.StartDetached(helper, []string{HelperFlag, planPath}, dir); err != nil {
 		return fmt.Errorf("启动更新程序失败: %w", err)
 	}
 	return nil
@@ -165,13 +167,13 @@ func RunHelper(planPath string) {
 	if errors.Is(err, errStillRunning) {
 		return
 	}
-	if err := startDetached(p.Exe, nil, filepath.Dir(p.Exe)); err != nil {
+	if err := proc.StartDetached(p.Exe, nil, filepath.Dir(p.Exe)); err != nil {
 		log.Printf("update: restart %s: %v", p.Exe, err)
 	}
 }
 
 func apply(p Plan) error {
-	if err := waitExit(p.PID, exitTimeout); err != nil {
+	if err := proc.WaitExit(p.PID, exitTimeout); err != nil {
 		return errStillRunning
 	}
 	// Console windows and Java consoles close shortly after the program;
