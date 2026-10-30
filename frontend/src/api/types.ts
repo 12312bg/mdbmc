@@ -336,6 +336,8 @@ export interface DiscoveredHost {
   redfish: boolean
   vendor: string
   tlsFingerprint: string
+  /** Group name for this host, created when missing; "" uses groupId. */
+  group: string
 }
 
 export interface AddDiscoveredRequest {

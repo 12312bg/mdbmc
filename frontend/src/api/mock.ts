@@ -629,7 +629,13 @@ export const mockApi: Api = {
     async addDiscovered(req) {
       need('device.manage'); await wait()
       for (const h of req.hosts) {
-        devices.push({ ...devices[0], id: nextDeviceId++, name: h.name || h.host, host: h.host, groupId: req.groupId, credentialId: req.credentialId, vendor: h.vendor, powerState: 'on', health: 'ok', reachable: true })
+        let groupId = req.groupId
+        if (h.group) {
+          let g = groups.find((x) => x.name.toLowerCase() === h.group.trim().toLowerCase())
+          if (!g) { g = { id: groups.length + 10, name: h.group.trim(), deviceCount: 0 }; groups.push(g) }
+          groupId = g.id
+        }
+        devices.push({ ...devices[0], id: nextDeviceId++, name: h.name || h.host, host: h.host, groupId, credentialId: req.credentialId, vendor: h.vendor, powerState: 'on', health: 'ok', reachable: true })
       }
       return { added: req.hosts.length, skipped: [] }
     },

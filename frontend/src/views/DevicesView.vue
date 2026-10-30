@@ -18,7 +18,7 @@ import { api, errMsg, type Device, type PowerAction } from '@/api'
 import { useDevices } from '@/stores/devices'
 import { useSession } from '@/stores/session'
 import { useDeviceActions } from '@/composables/useDeviceActions'
-import { powerActions, relativeTime } from '@/utils/format'
+import { compareVersions, powerActions, relativeTime } from '@/utils/format'
 
 const store = useDevices()
 const session = useSession()
@@ -255,7 +255,15 @@ const columns = computed<DataTableColumns<Device>>(() => [
       d.model ? h(NEllipsis, { class: 'muted', style: 'max-width: 100%; font-size: 12.5px' }, { default: () => d.model }) : null,
     ]),
   },
-  { title: '序列号', key: 'serial', width: 140, ellipsis: { tooltip: true }, render: (d) => h('span', { class: 'mono' }, d.serial || '—') },
+  {
+    title: '固件版本', key: 'bmcFirmware', width: 150,
+    sorter: (a, b) => compareVersions(a.bmcFirmware, b.bmcFirmware) || compareVersions(a.biosVersion, b.biosVersion),
+    render: (d) => h('div', { class: 'cell-fw' }, [
+      h('div', { title: d.bmcFirmware }, [h('span', { class: 'fw-k' }, 'BMC'), h('span', { class: 'mono' }, d.bmcFirmware || '—')]),
+      h('div', { title: d.biosVersion }, [h('span', { class: 'fw-k' }, 'BIOS'), h('span', { class: 'mono' }, d.biosVersion || '—')]),
+    ]),
+  },
+  { title: '序列号', key: 'serial', width: 130, ellipsis: { tooltip: true }, render: (d) => h('span', { class: 'mono' }, d.serial || '—') },
   { title: '分组', key: 'groupName', width: 120, ellipsis: { tooltip: true }, render: (d) => d.groupName || h('span', { class: 'muted' }, '未分组') },
   {
     title: '操作', key: 'actions', width: 124, fixed: 'right',
@@ -389,7 +397,7 @@ function healthRank(d: Device) {
           size="small"
           flex-height
           virtual-scroll
-          :scroll-x="980"
+          :scroll-x="1120"
         >
           <template #empty>
             <div class="table-empty">
@@ -527,6 +535,21 @@ function healthRank(d: Device) {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+.table :deep(.cell-fw > div) {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table :deep(.fw-k) {
+  flex: none;
+  width: 30px;
+  font-size: 11.5px;
+  color: var(--text-3);
 }
 .table-empty {
   padding: 48px 0;

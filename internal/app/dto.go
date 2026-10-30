@@ -295,6 +295,9 @@ type DiscoveredHost struct {
 	Redfish        bool   `json:"redfish"`
 	Vendor         string `json:"vendor"`
 	TLSFingerprint string `json:"tlsFingerprint"`
+	// Group names this host's group, created when missing; empty uses the
+	// request's GroupID.
+	Group string `json:"group"`
 }
 
 // AddDiscoveredRequest adds discovered hosts with shared settings.

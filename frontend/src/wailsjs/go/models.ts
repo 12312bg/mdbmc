@@ -7,6 +7,7 @@ export namespace app {
 	    redfish: boolean;
 	    vendor: string;
 	    tlsFingerprint: string;
+	    group: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new DiscoveredHost(source);
@@ -20,6 +21,7 @@ export namespace app {
 	        this.redfish = source["redfish"];
 	        this.vendor = source["vendor"];
 	        this.tlsFingerprint = source["tlsFingerprint"];
+	        this.group = source["group"];
 	    }
 	}
 	export class AddDiscoveredRequest {

@@ -90,29 +90,73 @@ const columns: DataTableColumns<ScanFound> = [
 
 // ----- add modal -----
 const showAdd = ref(false)
-const addGroup = ref(0)
 const credMode = ref<'profile' | 'custom'>('profile')
 const credId = ref<number | null>(null)
 const username = ref('')
 const password = ref('')
 const adding = ref(false)
 
+const selectedHosts = computed(() => {
+  const picked = new Set(checked.value)
+  return found.value.filter((r) => picked.has(r.host) && !r.managedId)
+})
+
+// Groups by brand: each recognised brand goes to the group of the same name,
+// which is created when missing; unrecognised BMCs stay ungrouped. Every
+// choice can be changed. A choice is a group id, or "new:<name>".
+type GroupChoice = number | string
+const groupChoice = ref<Record<string, GroupChoice>>({})
+const recognised = (vendor: string) => !!vendor && vendor !== 'generic'
+
+const brandRows = computed(() => {
+  const m = new Map<string, { vendor: string; name: string; count: number }>()
+  for (const r of selectedHosts.value) {
+    const row = m.get(r.vendor) ?? { vendor: r.vendor, name: r.vendorName, count: 0 }
+    row.count++
+    m.set(r.vendor, row)
+  }
+  return [...m.values()].sort((a, b) => Number(recognised(b.vendor)) - Number(recognised(a.vendor)) || b.count - a.count)
+})
+
+function brandGroup(vendor: string, name: string) {
+  const names = new Set([name, ...name.split('/'), vendor].map((x) => x.trim().toLowerCase()).filter(Boolean))
+  return store.groups.find((g) => names.has(g.name.trim().toLowerCase()))
+}
+
+function groupOptions(row: { vendor: string; name: string }) {
+  const opts: { label: string; value: GroupChoice }[] = [...store.groupOptions]
+  if (recognised(row.vendor) && !brandGroup(row.vendor, row.name)) opts.splice(1, 0, { label: `${row.name}（新建分组）`, value: `new:${row.name}` })
+  return opts
+}
+
 function openAdd() {
   credMode.value = store.credentials.length ? 'profile' : 'custom'
   credId.value = store.credentials[0]?.id ?? null
+  const choice: Record<string, GroupChoice> = {}
+  for (const row of brandRows.value) {
+    choice[row.vendor] = recognised(row.vendor) ? brandGroup(row.vendor, row.name)?.id ?? `new:${row.name}` : 0
+  }
+  groupChoice.value = choice
   showAdd.value = true
 }
 
+function groupNameFor(vendor: string) {
+  const c = groupChoice.value[vendor] ?? 0
+  if (typeof c === 'string') return c.slice('new:'.length)
+  return store.groups.find((g) => g.id === c)?.name ?? ''
+}
+
 async function add() {
-  const picked = new Set(checked.value)
-  const hosts = found.value.filter((r) => picked.has(r.host) && !r.managedId)
+  const hosts = selectedHosts.value
   if (credMode.value === 'profile' && !credId.value) return message.warning('请选择凭据')
   if (credMode.value === 'custom' && !username.value) return message.warning('请输入 BMC 用户名')
   adding.value = true
   try {
     const res = await api.discovery.addDiscovered({
-      hosts: hosts.map((r) => ({ host: r.host, name: '', ipmi: r.ipmi, redfish: r.redfish, vendor: r.vendor, tlsFingerprint: r.tlsFingerprint })),
-      ipmiPort: ipmiPort.value, httpsPort: httpsPort.value, groupId: addGroup.value,
+      hosts: hosts.map((r) => ({
+        host: r.host, name: '', ipmi: r.ipmi, redfish: r.redfish, vendor: r.vendor, tlsFingerprint: r.tlsFingerprint, group: groupNameFor(r.vendor),
+      })),
+      ipmiPort: ipmiPort.value, httpsPort: httpsPort.value, groupId: 0,
       credentialId: credMode.value === 'profile' ? credId.value ?? 0 : 0,
       username: credMode.value === 'custom' ? username.value : '', password: credMode.value === 'custom' ? password.value : '',
     })
@@ -195,13 +239,20 @@ async function add() {
       />
     </div>
 
-    <n-modal v-model:show="showAdd" preset="card" title="添加发现的设备" style="width: 520px">
+    <n-modal v-model:show="showAdd" preset="card" title="添加发现的设备" style="width: 560px">
       <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
-        将添加 {{ checked.length }} 台设备。添加后会自动连接 BMC 识别型号、序列号和固件版本。
+        将添加 {{ selectedHosts.length }} 台设备。添加后会自动连接 BMC 识别型号、序列号和固件版本。
       </n-alert>
       <n-form label-placement="top">
         <n-form-item label="分组">
-          <n-select v-model:value="addGroup" :options="store.groupOptions" />
+          <div class="brand-groups">
+            <div v-for="row in brandRows" :key="row.vendor" class="bg-row">
+              <VendorBadge :vendor="row.vendor" :name="row.name" />
+              <span class="bg-count">{{ row.count }} 台</span>
+              <n-select v-model:value="groupChoice[row.vendor]" :options="groupOptions(row)" class="bg-select" />
+            </div>
+            <div class="bg-hint">按品牌放入同名分组，没有时新建；可以改为其他分组。</div>
+          </div>
         </n-form-item>
         <n-form-item label="登录凭据">
           <n-radio-group v-model:value="credMode" size="small">
@@ -248,6 +299,33 @@ async function add() {
 .results {
   margin-top: 16px;
   padding: 14px 16px 16px;
+}
+.brand-groups {
+  width: 100%;
+}
+.bg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.bg-row + .bg-row {
+  border-top: 1px solid var(--border);
+}
+.bg-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.bg-select {
+  width: 230px;
+  flex: none;
+}
+.bg-hint {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
 }
 .results-head {
   display: flex;

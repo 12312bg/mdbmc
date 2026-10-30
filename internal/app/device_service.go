@@ -318,6 +318,42 @@ func groupName(name string) (string, error) {
 	return name, nil
 }
 
+// groupsByName finds groups by name, ignoring case, and creates missing
+// ones; for adding many devices at once.
+type groupsByName struct {
+	a   *App
+	ids map[string]int64
+}
+
+func (a *App) groupsByName(ctx context.Context) (*groupsByName, error) {
+	gs, err := a.store.ListGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	g := &groupsByName{a: a, ids: map[string]int64{}}
+	for _, x := range gs {
+		g.ids[strings.ToLower(x.Name)] = x.ID
+	}
+	return g, nil
+}
+
+// id returns the id of the group called name, creating it if needed.
+func (g *groupsByName) id(ctx context.Context, name string) (int64, error) {
+	name, err := groupName(name)
+	if err != nil {
+		return 0, err
+	}
+	if id, ok := g.ids[strings.ToLower(name)]; ok {
+		return id, nil
+	}
+	id, err := g.a.store.CreateGroup(ctx, name)
+	if err != nil {
+		return 0, err
+	}
+	g.ids[strings.ToLower(name)] = id
+	return id, nil
+}
+
 // CreateGroup adds a group.
 func (s *DeviceService) CreateGroup(name string) (*GroupDTO, error) {
 	sess, err := s.a.auth.Require(auth.PermDeviceManage)

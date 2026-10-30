@@ -139,6 +139,10 @@ func (d *DiscoveryService) AddDiscovered(req AddDiscoveredRequest) (*AddDiscover
 		req.HTTPSPort = 443
 	}
 	ctx := d.a.bg()
+	groups, err := d.a.groupsByName(ctx)
+	if err != nil {
+		return nil, err
+	}
 	res := &AddDiscoveredResult{Skipped: []string{}}
 	var added []int64
 	var pwEnc []byte
@@ -150,9 +154,16 @@ func (d *DiscoveryService) AddDiscovered(req AddDiscoveredRequest) (*AddDiscover
 		if name == "" {
 			name = h.Host
 		}
+		groupID := req.GroupID
+		if strings.TrimSpace(h.Group) != "" {
+			if groupID, err = groups.id(ctx, h.Group); err != nil {
+				res.Skipped = append(res.Skipped, fmt.Sprintf("%s：%v", h.Host, err))
+				continue
+			}
+		}
 		dev := &store.Device{
 			Name: name, Host: h.Host, IPMIPort: req.IPMIPort, HTTPSPort: req.HTTPSPort, Protocol: string(bmc.ProtocolAuto),
-			GroupID: req.GroupID, CredentialID: req.CredentialID, Username: req.Username, PasswordEnc: pwEnc,
+			GroupID: groupID, CredentialID: req.CredentialID, Username: req.Username, PasswordEnc: pwEnc,
 			Vendor: h.Vendor, HasIPMI: h.IPMI, HasRedfish: h.Redfish, TLSFingerprint: h.TLSFingerprint,
 		}
 		if req.CredentialID != 0 {

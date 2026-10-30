@@ -567,13 +567,9 @@ func (s *DeviceService) Import(token string) (*ImportResult, error) {
 	importMu.Unlock()
 
 	ctx := s.a.bg()
-	gs, err := s.a.store.ListGroups(ctx)
+	groups, err := s.a.groupsByName(ctx)
 	if err != nil {
 		return nil, err
-	}
-	groupID := map[string]int64{}
-	for _, g := range gs {
-		groupID[strings.ToLower(g.Name)] = g.ID
 	}
 	res := &ImportResult{Failed: []string{}}
 	var ids []int64
@@ -583,15 +579,10 @@ func (s *DeviceService) Import(token string) (*ImportResult, error) {
 		}
 		in := it.input
 		if g := strings.TrimSpace(it.row.Group); g != "" {
-			id, ok := groupID[strings.ToLower(g)]
-			if !ok {
-				if id, err = s.a.store.CreateGroup(ctx, g); err != nil {
-					res.Failed = append(res.Failed, fmt.Sprintf("第 %d 行：%v", it.row.Row, err))
-					continue
-				}
-				groupID[strings.ToLower(g)] = id
+			if in.GroupID, err = groups.id(ctx, g); err != nil {
+				res.Failed = append(res.Failed, fmt.Sprintf("第 %d 行：%v", it.row.Row, err))
+				continue
 			}
-			in.GroupID = id
 		}
 		d := &store.Device{
 			Name: in.Name, Host: in.Host, IPMIPort: in.IPMIPort, HTTPSPort: in.HTTPSPort, Protocol: in.Protocol,
