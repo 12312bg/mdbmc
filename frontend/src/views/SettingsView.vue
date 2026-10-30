@@ -93,7 +93,6 @@ async function save() {
     <div class="page-head">
       <div>
         <h1>系统设置</h1>
-        <p>{{ canEdit ? '修改后立即生效' : '仅管理员可以修改设置' }}</p>
       </div>
     </div>
     <div class="grid">
@@ -147,7 +146,6 @@ async function save() {
             <n-form-item label="更新源">
               <div class="field">
                 <n-input v-model:value="updForm.source" :placeholder="updForm.defaultSource" clearable />
-                <div class="hint">留空使用 GitHub Releases。可填镜像地址或内网服务器（目录结构与 GitHub Releases 相同）；签名不符的更新一律拒绝。</div>
               </div>
             </n-form-item>
             <n-form-item label="代理">
@@ -186,7 +184,6 @@ async function save() {
           </div>
           <n-descriptions :column="1" label-placement="left" size="small" class="about-desc">
             <n-descriptions-item label="数据目录"><span class="mono" style="word-break: break-all">{{ session.status?.dataDir }}</span></n-descriptions-item>
-            <n-descriptions-item label="协议">IPMI 2.0 (RMCP+) · Redfish</n-descriptions-item>
           </n-descriptions>
         </div>
         <n-alert type="info" :bordered="false" title="数据迁移">

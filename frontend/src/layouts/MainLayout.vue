@@ -158,7 +158,7 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
       <div class="brand">
         <AppLogo :size="30" plate="dark" />
         <div v-if="!collapsed" class="brand-text">
-          <div class="brand-name">明点</div>
+          <div class="brand-name">明点信科</div>
           <div class="brand-sub">服务器管理系统</div>
         </div>
       </div>

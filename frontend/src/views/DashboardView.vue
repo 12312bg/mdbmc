@@ -73,7 +73,6 @@ const healthSegments = computed<Segment[]>(() => {
     <div class="page-head">
       <div>
         <h1>总览</h1>
-        <p>所有受管服务器的电源、健康与连接状态</p>
       </div>
       <div v-if="session.can('device.manage')" style="display: flex; gap: 8px">
         <n-button @click="router.push('/discovery')">

@@ -134,7 +134,6 @@ async function add() {
     <div class="page-head">
       <div>
         <h1>扫描发现</h1>
-        <p>在局域网中查找 BMC：探测 IPMI（UDP {{ ipmiPort }}）和 Redfish（HTTPS {{ httpsPort }}），并识别品牌</p>
       </div>
     </div>
 

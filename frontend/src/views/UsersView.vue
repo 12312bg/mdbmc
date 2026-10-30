@@ -151,7 +151,6 @@ const permRows: { perm: Permission; label: string }[] = [
     <div class="page-head">
       <div>
         <h1>用户与角色</h1>
-        <p>本地账号登录本软件；三种角色权限固定。</p>
       </div>
       <n-button type="primary" @click="open()">
         <template #icon><n-icon :component="AddOutline" /></template>

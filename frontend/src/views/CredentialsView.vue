@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { h, onMounted, ref } from 'vue'
 import {
-  NButton, NIcon, NDataTable, NModal, NForm, NFormItem, NInput, NAlert, useDialog, useMessage, type DataTableColumns,
+  NButton, NIcon, NDataTable, NModal, NForm, NFormItem, NInput, useDialog, useMessage, type DataTableColumns,
   type FormInst, type FormRules,
 } from 'naive-ui'
-import { AddOutline, CreateOutline, EyeOutline, TrashOutline, KeyOutline } from '@vicons/ionicons5'
+import { AddOutline, CreateOutline, EyeOutline, TrashOutline } from '@vicons/ionicons5'
 import { api, errMsg, type Credential, type CredentialInput } from '@/api'
 import { useDevices } from '@/stores/devices'
 import { useSession } from '@/stores/session'
@@ -106,17 +106,12 @@ const columns: DataTableColumns<Credential> = [
     <div class="page-head">
       <div>
         <h1>凭据</h1>
-        <p>可复用的 BMC 账号模板。修改模板密码后，所有使用该模板的设备立即生效。</p>
       </div>
       <n-button v-if="session.can('device.manage')" type="primary" @click="open()">
         <template #icon><n-icon :component="AddOutline" /></template>
         新建凭据
       </n-button>
     </div>
-    <n-alert type="default" :bordered="false" class="note">
-      <template #icon><n-icon :component="KeyOutline" /></template>
-      密码使用 AES-256-GCM 加密保存在本机数据库中，密钥由各账号的登录密码保护。
-    </n-alert>
     <div class="card" style="padding: 4px 4px 8px">
       <n-data-table :columns="columns" :data="store.credentials" :loading="store.loading" :bordered="false" size="small" />
     </div>
@@ -139,9 +134,3 @@ const columns: DataTableColumns<Credential> = [
     </n-modal>
   </div>
 </template>
-
-<style scoped>
-.note {
-  margin-bottom: 16px;
-}
-</style>

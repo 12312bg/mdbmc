@@ -263,7 +263,6 @@ function healthRank(d: Device) {
     <div class="page-head">
       <div>
         <h1>设备</h1>
-        <p>共 {{ store.items.length }} 台，当前显示 {{ filtered.length }} 台</p>
       </div>
       <div class="head-actions">
         <n-button @click="refresh()">

@@ -62,7 +62,6 @@ const columns: DataTableColumns<AuditEntry> = [
     <div class="page-head">
       <div>
         <h1>审计日志</h1>
-        <p>记录登录、电源操作、控制台访问、密码查看与配置变更</p>
       </div>
     </div>
     <div class="card" style="padding: 12px 14px">

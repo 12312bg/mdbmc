@@ -39,7 +39,6 @@ async function submit() {
 <template>
   <AuthShell>
     <h2 class="title">登录</h2>
-    <p class="sub">使用本地账号登录。登录密码同时用于解锁已保存的 BMC 密码。</p>
     <n-alert v-if="session.lockedReason" type="info" :bordered="false" class="gap">{{ session.lockedReason }}</n-alert>
     <n-alert v-if="api.isMock" type="default" :bordered="false" :show-icon="false" class="gap">
       预览模式：用户名 admin / zhangwei / liuyang，任意 8 位以上密码。
@@ -65,7 +64,7 @@ async function submit() {
       <n-alert v-if="error" type="error" :bordered="false" class="gap">{{ error }}</n-alert>
       <n-button type="primary" size="large" block :loading="loading" attr-type="submit">登录</n-button>
     </n-form>
-    <p class="foot muted">忘记密码请联系管理员重置。所有管理员都忘记密码时，已保存的 BMC 密码无法恢复。</p>
+    <p class="foot muted">忘记密码请联系管理员重置。</p>
   </AuthShell>
 </template>
 

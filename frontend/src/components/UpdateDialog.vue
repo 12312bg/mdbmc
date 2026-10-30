@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { NModal, NButton, NIcon, NProgress, NSpin, useMessage } from 'naive-ui'
 import {
   RocketOutline, ArrowForward, CloseOutline, TimeOutline, CubeOutline, ShieldCheckmarkOutline, CloudDownloadOutline,
-  OpenOutline, CheckmarkCircle, AlertCircleOutline, InformationCircleOutline,
+  CheckmarkCircle, AlertCircleOutline, InformationCircleOutline,
 } from '@vicons/ionicons5'
 import MarkdownView from './MarkdownView.vue'
 import { api, errMsg } from '@/api'
@@ -54,7 +54,6 @@ async function run(fn: () => Promise<unknown>) {
 const download = () => run(() => api.update.download())
 const cancelDownload = () => run(() => api.update.cancelDownload())
 const install = () => run(() => api.update.install())
-const openPage = () => latest.value && api.openExternal(latest.value.url)
 </script>
 
 <template>
@@ -79,7 +78,6 @@ const openPage = () => latest.value && api.openExternal(latest.value.url)
         <span v-if="published"><n-icon :component="TimeOutline" />发布于 {{ published }}</span>
         <span v-if="latest.size"><n-icon :component="CubeOutline" />更新包 {{ formatBytes(latest.size) }}</span>
         <span><n-icon :component="ShieldCheckmarkOutline" />签名校验</span>
-        <a class="meta-link" href="#" @click.prevent="openPage">发布页面<n-icon :component="OpenOutline" /></a>
       </div>
 
       <div class="notes-title">更新内容</div>
@@ -108,14 +106,10 @@ const openPage = () => latest.value && api.openExternal(latest.value.url)
         <template v-else-if="!canInstall">
           <div class="note">
             <n-icon :component="InformationCircleOutline" />
-            <span>当前运行环境不支持在线安装，请到发布页面下载新版本。</span>
+            <span>当前运行环境不支持在线安装。</span>
           </div>
           <div class="actions">
-            <n-button @click="upd.dialog = false">稍后</n-button>
-            <n-button type="primary" @click="openPage">
-              <template #icon><n-icon :component="OpenOutline" /></template>
-              前往发布页面
-            </n-button>
+            <n-button @click="upd.dialog = false">知道了</n-button>
           </div>
         </template>
 
@@ -280,19 +274,10 @@ const openPage = () => latest.value && api.openExternal(latest.value.url)
   font-size: 12.5px;
   color: var(--text-3);
 }
-.meta span,
-.meta-link {
+.meta span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-.meta-link {
-  margin-left: auto;
-  color: var(--accent);
-  text-decoration: none;
-}
-.meta-link:hover {
-  text-decoration: underline;
 }
 .notes-title {
   padding: 16px 24px 0;

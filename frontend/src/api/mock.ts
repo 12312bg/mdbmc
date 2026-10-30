@@ -132,9 +132,7 @@ const mockNotes = `## 新功能
 ## 修复
 
 - 修复部分 Dell iDRAC 9 固件识别为“通用”品牌的问题
-- 修复深色主题下图表悬停提示看不清的问题
-
-详细说明见 [发布页面](https://github.com/12312bg/mdbmc-release/releases)。`
+- 修复深色主题下图表悬停提示看不清的问题`
 let upd: UpdateStatus = {
   currentVersion: '0.1.0-preview', state: 'idle', mode: updParam === 'portable' ? 'portable' : 'installer', canInstall: true,
   latest: null, downloaded: 0, total: 0, speed: 0, error: '', checkedAt: 0,

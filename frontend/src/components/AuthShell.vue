@@ -10,17 +10,10 @@ const session = useSession()
     <aside class="hero">
       <div class="hero-top">
         <AppLogo :size="40" plate="always" />
-        <span class="hero-brand">明点服务器管理系统</span>
+        <span class="hero-brand">明点信科</span>
       </div>
       <div class="hero-body">
-        <h1>多品牌服务器<br />带外统一管理</h1>
-        <p>通过 IPMI 2.0 与 Redfish 统一管理 Supermicro、Dell、HPE、Lenovo、华为、浪潮、新华三等服务器的 BMC。</p>
-        <ul>
-          <li>批量开关机、重启与电源循环</li>
-          <li>传感器、事件日志与硬件资产集中查看</li>
-          <li>一键打开 Web 管理与远程 KVM 控制台</li>
-          <li>BMC 密码加密保存，按角色控制权限</li>
-        </ul>
+        <h1>明点服务器管理系统</h1>
       </div>
       <svg class="rack" viewBox="0 0 320 260" aria-hidden="true">
         <defs>
@@ -79,33 +72,20 @@ const session = useSession()
   z-index: 1;
 }
 .hero-body h1 {
-  font-size: 32px;
+  font-size: 34px;
   line-height: 1.35;
-  margin: 0 0 16px;
-  font-weight: 600;
-}
-.hero-body p {
-  color: rgba(255, 255, 255, 0.78);
-  line-height: 1.7;
-  max-width: 420px;
-  margin: 0 0 20px;
-}
-.hero-body ul {
   margin: 0;
-  padding: 0;
-  list-style: none;
-  color: rgba(255, 255, 255, 0.86);
-  line-height: 2.1;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
-.hero-body li::before {
+.hero-body h1::after {
   content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  display: block;
+  width: 48px;
+  height: 3px;
+  margin-top: 18px;
+  border-radius: 2px;
   background: #86b6ef;
-  margin-right: 10px;
-  vertical-align: middle;
 }
 .rack {
   position: absolute;
