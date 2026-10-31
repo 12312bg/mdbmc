@@ -65,7 +65,7 @@ button.btn{font:inherit;cursor:pointer;border:0}
 .btn.secondary{background:transparent;color:var(--text-1);border:1px solid var(--border)}
 </style></head>
 <body><main class="card {{.Tone}}">
-<div class="brand"><i></i>明点服务器管理系统 · 控制台</div>
+<div class="brand"><i></i>服务器资源管理系统 · 控制台</div>
 <div class="icon">{{if eq .Tone "loading"}}<div class="spin"></div>{{else if eq .Tone "java"}}<div class="spin i-wait"></div><svg class="i-ok" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg><svg class="i-fail" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg>{{else if eq .Tone "warning"}}<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 9.5-4-1.3-7-5-7-9.5V6z"/><path d="M12 9v4"/><path d="M12 16h.01"/></svg>{{else}}<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg>{{end}}</div>
 <h1 id="title">{{.Title}}</h1>
 <p>{{.Message}}</p>

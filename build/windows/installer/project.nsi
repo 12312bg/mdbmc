@@ -103,6 +103,14 @@ Section
     File /nonfatal /r "..\..\jre\*.*"
     SetOutPath $INSTDIR
 
+    # Before 1.0 the product was called 明点服务器管理系统: remove that name's
+    # shortcuts and uninstall entry when installing over it.
+    Delete "$SMPROGRAMS\明点服务器管理系统.lnk"
+    Delete "$DESKTOP\明点服务器管理系统.lnk"
+    SetRegView 64
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}明点服务器管理系统"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${INFO_COMPANYNAME}明点服务器管理系统"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

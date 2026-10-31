@@ -242,7 +242,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writePage(w, http.StatusForbidden, page{
 			Tone:    "error",
 			Title:   "此地址仅供控制台窗口使用",
-			Message: "请在明点服务器管理系统的设备列表中重新打开 Web 管理或远程控制台。",
+			Message: "请在服务器资源管理系统的设备列表中重新打开 Web 管理或远程控制台。",
 		})
 		return
 	}
@@ -303,7 +303,7 @@ func (p *proxy) start(w http.ResponseWriter, r *http.Request) {
 		writePage(w, http.StatusForbidden, page{
 			Tone:    "error",
 			Title:   "控制台链接已失效",
-			Message: "请在明点服务器管理系统的设备列表中重新打开 Web 管理或远程控制台。",
+			Message: "请在服务器资源管理系统的设备列表中重新打开 Web 管理或远程控制台。",
 		})
 		return
 	}

@@ -260,5 +260,5 @@ jobs:
             flags=()
             [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
             gh release create "$TAG" "${files[@]}" --repo "$RELEASE_REPO" \
-              --title "明点服务器管理系统 $TAG" --notes-file body.md "${flags[@]}"
+              --title "服务器资源管理系统 $TAG" --notes-file body.md "${flags[@]}"
           fi

@@ -14,6 +14,8 @@ import AppLogo from '@/components/AppLogo.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import UpdateDialog from '@/components/UpdateDialog.vue'
 import AlertBell from '@/components/AlertBell.vue'
+import wordmark from '@/assets/logo-wordmark.png'
+import wordmarkDark from '@/assets/logo-wordmark-dark.png'
 import { api, type Permission } from '@/api'
 import { useSession } from '@/stores/session'
 import { useTheme } from '@/stores/theme'
@@ -173,12 +175,12 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
-      <div class="brand">
-        <AppLogo :size="30" plate="dark" />
-        <div v-if="!collapsed" class="brand-text">
-          <div class="brand-name">明点信科</div>
-          <div class="brand-sub">服务器管理系统</div>
-        </div>
+      <div class="brand" :class="{ collapsed }">
+        <AppLogo v-if="collapsed" :size="30" plate="dark" />
+        <template v-else>
+          <img class="brand-mark" :src="theme.dark ? wordmarkDark : wordmark" alt="明点信科" draggable="false" />
+          <div class="brand-name">服务器资源管理系统</div>
+        </template>
       </div>
       <n-menu :value="activeKey" :options="menu" :collapsed="collapsed" :collapsed-width="64" :collapsed-icon-size="20" :indent="20" />
       <div v-if="api.isMock && !collapsed" class="mock-flag">预览模式 · 模拟数据</div>
@@ -254,22 +256,34 @@ const initials = computed(() => (session.user?.displayName || session.user?.user
 }
 .brand {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 3px;
   height: 60px;
-  padding: 0 17px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
+  overflow: hidden;
+}
+.brand.collapsed {
+  align-items: center;
+  padding: 0;
+}
+.brand-mark {
+  display: block;
+  /* Two thirds of the name's width (about 141px). */
+  width: 94px;
+  height: auto;
 }
 .brand-name {
+  margin-top: 1px;
+  font-size: 13px;
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.04em;
-  line-height: 18px;
-}
-.brand-sub {
-  font-size: 11.5px;
-  color: var(--text-3);
+  line-height: 17px;
+  letter-spacing: 3px;
+  white-space: nowrap;
+  color: var(--text-2);
 }
 .mock-flag {
   margin: auto 16px 16px;

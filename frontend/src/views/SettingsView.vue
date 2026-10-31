@@ -287,7 +287,7 @@ async function save() {
           <div class="about-head">
             <AppLogo :size="44" plate="dark" />
             <div>
-              <div class="about-name">明点服务器管理系统</div>
+              <div class="about-name">服务器资源管理系统</div>
               <div class="about-ver">
                 <span>版本 {{ session.status?.version }}</span>
                 <n-tag size="small" :bordered="false">{{ modeLabel }}</n-tag>

@@ -125,7 +125,7 @@ func main() {
 	a.SetFileDialogs(fileDialogs{&wailsCtx})
 
 	err = wails.Run(&options.App{
-		Title:     "明点服务器管理系统",
+		Title:     "服务器资源管理系统",
 		Width:     1400,
 		Height:    880,
 		MinWidth:  1100,

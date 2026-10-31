@@ -263,7 +263,7 @@ func (s *AlertService) TestWebhook(in AlertConfig) error {
 		return err
 	}
 	al := &store.Alert{TS: time.Now().Unix(), DeviceName: "测试设备", Host: "192.0.2.1", Kind: alertHealth,
-		Severity: severityWarning, Title: "测试消息", Detail: "这是明点服务器管理系统发送的测试消息。"}
+		Severity: severityWarning, Title: "测试消息", Detail: "这是服务器资源管理系统发送的测试消息。"}
 	if err := postWebhook(in.WebhookURL, strings.TrimSpace(in.WebhookSecret), newWebhookPayload("test", al, nil)); err != nil {
 		return fmt.Errorf("发送失败：%w", err)
 	}

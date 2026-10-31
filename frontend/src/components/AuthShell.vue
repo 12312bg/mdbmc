@@ -20,7 +20,7 @@ const points = [
         <img class="hero-logo" :src="wordmark" alt="明点信科" draggable="false" />
       </div>
       <div class="hero-body">
-        <h1>明点服务器管理系统</h1>
+        <h1>服务器资源管理系统</h1>
         <p class="tagline">一个窗口，管好每一台服务器</p>
         <ul class="points">
           <li v-for="p in points" :key="p.text">
@@ -87,7 +87,9 @@ const points = [
   z-index: 1;
 }
 .hero-body h1 {
-  font-size: 34px;
+  /* One line down to the smallest window. */
+  font-size: min(34px, 2.6vw);
+  white-space: nowrap;
   line-height: 1.35;
   margin: 0;
   font-weight: 600;
