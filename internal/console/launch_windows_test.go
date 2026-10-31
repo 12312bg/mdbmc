@@ -38,6 +38,31 @@ const (
 // exchange. WebView2 refuses that server, so the page can only appear through
 // the window's local proxy. It needs a desktop session and the WebView2
 // runtime, so it only runs with MDBMC_UI_TEST=1 (set in CI).
+// profileDir is a temporary WebView2 profile. WebView2's browser processes
+// can outlive the window for a moment and keep writing to the profile, so
+// removing it is retried, and a profile still in use is only logged.
+func profileDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "mdbmc-profile-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for i := 0; ; i++ {
+			err := os.RemoveAll(dir)
+			if err == nil {
+				return
+			}
+			if i == 50 {
+				t.Logf("profile not removed: %v", err)
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	})
+	return dir
+}
+
 func TestConsoleWindowSmoke(t *testing.T) {
 	if os.Getenv("MDBMC_UI_TEST") == "" {
 		t.Skip("set MDBMC_UI_TEST=1 to open a real WebView2 window")
@@ -80,7 +105,7 @@ func TestConsoleWindowSmoke(t *testing.T) {
 		p, err := startWindow(Request{
 			Title:           "MDBMC smoke test",
 			Spec:            bmc.LaunchSpec{URL: srv.URL + path, AutoLogin: true, Username: "ADMIN", Password: `p"w&1`},
-			Profile:         t.TempDir(),
+			Profile:         profileDir(t),
 			CertFingerprint: fingerprint,
 		}, 60*time.Second, func(ev string) {
 			select {
@@ -146,7 +171,7 @@ func TestConsoleWindowSmoke(t *testing.T) {
 			t.Fatal(err)
 		}
 		helper := exec.Command(exe, parentHelper)
-		helper.Env = append(os.Environ(), "MDBMC_TEST_URL="+srv.URL+"/", "MDBMC_TEST_FP="+pinned, "MDBMC_TEST_PROFILE="+t.TempDir())
+		helper.Env = append(os.Environ(), "MDBMC_TEST_URL="+srv.URL+"/", "MDBMC_TEST_FP="+pinned, "MDBMC_TEST_PROFILE="+profileDir(t))
 		out, err := helper.Output()
 		if err != nil {
 			t.Fatalf("helper: %v", err)
